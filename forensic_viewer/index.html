@@ -85,17 +85,38 @@
         }
         .filter-btn {
             background: #3f3f4e;
-            color: var(--text-color);
-            border: none;
+            color: #94a3b8;
+            border: 1px solid transparent;
             padding: 4px 8px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 12px;
+            transition: all 0.2s;
         }
-        .filter-btn.active-filter {
-            background: var(--highlight);
-            color: #1e1e24;
-            font-weight: bold;
+
+        .filter-btn[data-filter="all"]:hover,
+        .filter-btn[data-filter="all"].active-filter {
+            background-color: rgba(56, 189, 248, 0.2); border-color: #38bdf8; color: #38bdf8;
+        }
+
+        .filter-btn[data-filter="system_activation"]:hover,
+        .filter-btn[data-filter="system_activation"].active-filter {
+            background-color: rgba(236, 72, 153, 0.2); border-color: #ec4899; color: #ec4899;
+        }
+
+        .filter-btn[data-filter="environment_hazard"]:hover,
+        .filter-btn[data-filter="environment_hazard"].active-filter {
+            background-color: rgba(249, 115, 22, 0.2); border-color: #f97316; color: #f97316;
+        }
+
+        .filter-btn[data-filter="v2x"]:hover,
+        .filter-btn[data-filter="v2x"].active-filter {
+            background-color: rgba(168, 85, 247, 0.2); border-color: #a855f7; color: #a855f7;
+        }
+
+        .filter-btn[data-filter="collision_event"]:hover,
+        .filter-btn[data-filter="collision_event"].active-filter {
+            background-color: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #ef4444;
         }
 
         .log-list { list-style: none; padding: 0; overflow-y: auto; flex-grow: 1; margin: 0; }
@@ -183,9 +204,10 @@
             <div class="panel-header">Causal Chain / Event Log</div>
             <div class="filters">
                 <button class="filter-btn active-filter" data-filter="all">All Events</button>
-                <button class="filter-btn" data-filter="system_activation" style="color: #ec4899;">System</button>
-                <button class="filter-btn" data-filter="environment_hazard" style="color: #f97316;">Environment</button>
-                <button class="filter-btn" data-filter="communication_delay" style="color: #a855f7;">V2X / Network</button>
+                <button class="filter-btn" data-filter="system_activation">System</button>
+                <button class="filter-btn" data-filter="environment_hazard">Environment</button>
+                <button class="filter-btn" data-filter="v2x">V2X / Network</button>
+                <button class="filter-btn" data-filter="collision_event">Collision</button>
             </div>
             <ul class="log-list" id="event-log">
                 </ul>
