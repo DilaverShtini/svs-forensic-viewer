@@ -3,7 +3,6 @@ let currentFrameIndex = 0;
 let simulationData = []; 
 let playbackInterval;
 let currentFilter = 'all'; 
-const SIMULATION_FPS_MS = 80; 
 
 const playBtn = document.getElementById('play-btn');
 const slider = document.getElementById('timeline-slider');
@@ -65,8 +64,7 @@ function updateDashboard(index) {
     slider.value = index;
     timeDisplay.textContent = parseFloat(frameData.time_sim_s).toFixed(1) + "s";
 
-    const formattedNumber = String(index).padStart(6, '0');
-    dashcamImg.src = `../../carla_backend/dashcam_records/frame_${formattedNumber}.jpg`;
+    loadDashcamImageSmart(index);
 
     if (typeof drawBEV === 'function') drawBEV(frameData);
     if (typeof updateChartSync === 'function') updateChartSync(); 
@@ -147,10 +145,24 @@ function generateCausalChain(data) {
 
             if (hasExplanations) {
                 li.style.cursor = 'pointer';
+                li.style.backgroundColor = '#1e1e2d'; 
+                li.style.border = '1px solid #3f3f4e';
+                li.style.borderLeft = `4px solid ${evt.color}`;
+                li.style.borderRadius = '4px';
+                li.style.padding = '8px 12px';
+                li.style.marginTop = '6px';
+                
+                const arrowSpan = document.createElement('span');
+                arrowSpan.innerHTML = '▼ view cause';
+                arrowSpan.style.float = 'right';
+                arrowSpan.style.fontSize = '0.8em';
+                arrowSpan.style.color = '#94a3b8';
+                li.appendChild(arrowSpan);
+
                 const causeList = document.createElement('ul');
                 causeList.style.display = 'none'; 
-                causeList.style.paddingLeft = '20px';
-                causeList.style.marginTop = '8px';
+                causeList.style.paddingLeft = '10px';
+                causeList.style.marginTop = '12px';
                 causeList.style.listStyleType = 'none';
 
                 frame.explanations.forEach(exp => {
@@ -162,11 +174,17 @@ function generateCausalChain(data) {
                     const causeItem = document.createElement('li');
                     causeItem.dataset.type = exp.type;
                     causeItem.style.borderLeft = `3px solid ${expColor}`;
-                    causeItem.style.paddingLeft = '8px';
-                    causeItem.style.marginBottom = '6px';
-                    causeItem.style.color = '#ccc';
-                    causeItem.style.fontSize = '0.9em';
-                    causeItem.innerHTML = `↳ cause: ${exp.event.toLowerCase()}`;
+                    causeItem.style.paddingLeft = '10px';
+                    causeItem.style.marginBottom = '8px';
+                    causeItem.style.color = '#e2e8f0';
+                    causeItem.style.fontSize = '0.95em';
+                    
+                    causeItem.style.cursor = 'pointer';
+                    causeItem.style.transition = 'color 0.2s';
+                    causeItem.innerHTML = `↳ <strong>cause:</strong> ${exp.event.toLowerCase()}`;
+
+                    causeItem.addEventListener('mouseenter', () => causeItem.style.color = '#38bdf8');
+                    causeItem.addEventListener('mouseleave', () => causeItem.style.color = '#e2e8f0');
 
                     causeItem.addEventListener('click', (e) => {
                         e.stopPropagation(); 
@@ -179,9 +197,25 @@ function generateCausalChain(data) {
                 li.addEventListener('click', () => {
                     const isHidden = causeList.style.display === 'none';
                     causeList.style.display = isHidden ? 'block' : 'none';
+                    arrowSpan.innerHTML = isHidden ? '▲ hide' : '▼ view cause';
                     jumpToFrame(index);
                 });
             } else {
+                li.style.cursor = 'pointer';
+                li.style.backgroundColor = '#1e1e2d'; 
+                li.style.border = '1px solid #3f3f4e';
+                li.style.borderLeft = `4px solid ${evt.color}`;
+                li.style.borderRadius = '4px';
+                li.style.padding = '8px 12px';
+                li.style.marginTop = '6px';
+                
+                const jumpIcon = document.createElement('span');
+                jumpIcon.innerHTML = '↱ jump';
+                jumpIcon.style.float = 'right';
+                jumpIcon.style.fontSize = '0.8em';
+                jumpIcon.style.color = '#94a3b8';
+                li.appendChild(jumpIcon);
+
                 li.addEventListener('click', () => jumpToFrame(index));
             }
 
@@ -196,6 +230,22 @@ function generateCausalChain(data) {
                 if (exp.type === 'system_activation') expColor = '#ec4899';
 
                 const li = createLogItem(index, frame.time_sim_s, `event: ${exp.event.toLowerCase()}`, expColor, exp.type);
+                
+                li.style.cursor = 'pointer';
+                li.style.backgroundColor = '#1e1e2d';
+                li.style.border = '1px solid #3f3f4e';
+                li.style.borderLeft = `4px solid ${expColor}`;
+                li.style.borderRadius = '4px';
+                li.style.padding = '8px 12px';
+                li.style.marginTop = '6px';
+                
+                const jumpIcon = document.createElement('span');
+                jumpIcon.innerHTML = '↱ jump';
+                jumpIcon.style.float = 'right';
+                jumpIcon.style.fontSize = '0.8em';
+                jumpIcon.style.color = '#94a3b8';
+                li.appendChild(jumpIcon);
+
                 li.addEventListener('click', () => jumpToFrame(index));
                 eventLogContainer.appendChild(li);
             });
@@ -255,7 +305,7 @@ function renderTimelineMarkers(data) {
 
 function updateDynamicLog(currentIndex) {
     if(!eventLogContainer) return;
-    
+
     const logItems = eventLogContainer.querySelectorAll(':scope > .log-item');
     let latestVisibleItem = null;
 
@@ -264,15 +314,28 @@ function updateDynamicLog(currentIndex) {
         const itemType = item.dataset.type;
         const timeMatch = itemIndex <= currentIndex;
 
-        let filterMatch = (currentFilter === 'all' || itemType === currentFilter);
+        let filterMatch = false;
 
-        if (!filterMatch && currentFilter !== 'all') {
-            const childCauses = item.querySelectorAll('li[data-type]');
-            childCauses.forEach(child => {
-                if (child.dataset.type === currentFilter) {
-                    filterMatch = true;
-                }
-            });
+        if (currentFilter === 'all') {
+            filterMatch = true;
+        } else {
+            let allowedTypes = [currentFilter];
+            if (currentFilter === 'v2x') {
+                allowedTypes = ['communication_delay', 'communication_failure'];
+            }
+
+            if (allowedTypes.includes(itemType)) {
+                filterMatch = true;
+            }
+
+            if (!filterMatch) {
+                const childCauses = item.querySelectorAll('li[data-type]');
+                childCauses.forEach(child => {
+                    if (allowedTypes.includes(child.dataset.type)) {
+                        filterMatch = true;
+                    }
+                });
+            }
         }
 
         if (timeMatch && filterMatch) {
