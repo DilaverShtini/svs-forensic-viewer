@@ -3,9 +3,9 @@ let telemetryChart;
 function initCharts(data) {
     const ctx = document.getElementById('telemetryChart').getContext('2d');
 
-    const times = data.map(d => parseFloat(d.time_sim_s).toFixed(1));
-    const speeds = data.map(d => d.ego_vehicle.speed_kmh);
-    const brakes = data.map(d => d.ego_vehicle.controls.brake * 100); 
+    const times = data.map(d => parseFloat(d.t).toFixed(1));
+    const speeds = data.map(d => d.v);
+    const brakes = data.map(d => d.b * 100); 
 
     const verticalLinePlugin = {
         id: 'verticalLine',

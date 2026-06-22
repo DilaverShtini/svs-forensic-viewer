@@ -99,13 +99,13 @@
             background-color: rgba(56, 189, 248, 0.2); border-color: #38bdf8; color: #38bdf8;
         }
 
-        .filter-btn[data-filter="system_activation"]:hover,
-        .filter-btn[data-filter="system_activation"].active-filter {
-            background-color: rgba(236, 72, 153, 0.2); border-color: #ec4899; color: #ec4899;
+        .filter-btn[data-filter="perception"]:hover,
+        .filter-btn[data-filter="perception"].active-filter {
+            background-color: rgba(56, 189, 248, 0.2); border-color: #38bdf8; color: #38bdf8;
         }
 
-        .filter-btn[data-filter="environment_hazard"]:hover,
-        .filter-btn[data-filter="environment_hazard"].active-filter {
+        .filter-btn[data-filter="system"]:hover,
+        .filter-btn[data-filter="system"].active-filter {
             background-color: rgba(249, 115, 22, 0.2); border-color: #f97316; color: #f97316;
         }
 
@@ -114,8 +114,8 @@
             background-color: rgba(168, 85, 247, 0.2); border-color: #a855f7; color: #a855f7;
         }
 
-        .filter-btn[data-filter="collision_event"]:hover,
-        .filter-btn[data-filter="collision_event"].active-filter {
+        .filter-btn[data-filter="critical"]:hover,
+        .filter-btn[data-filter="critical"].active-filter {
             background-color: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #ef4444;
         }
 
@@ -203,14 +203,14 @@
         <div class="panel">
             <div class="panel-header">Causal Chain / Event Log</div>
             <div class="filters">
-                <button class="filter-btn active-filter" data-filter="all">All Events</button>
-                <button class="filter-btn" data-filter="system_activation">System</button>
-                <button class="filter-btn" data-filter="environment_hazard">Environment</button>
-                <button class="filter-btn" data-filter="v2x">V2X / Network</button>
-                <button class="filter-btn" data-filter="collision_event">Collision</button>
+                <button class="filter-btn active-filter" data-filter="all">All events</button>
+                <button class="filter-btn" data-filter="perception">Obstacles detection</button>
+                <button class="filter-btn" data-filter="system">System's actions</button>
+                <button class="filter-btn" data-filter="v2x">Network events</button>
+                <button class="filter-btn" data-filter="critical">Collisions</button>
             </div>
             <ul class="log-list" id="event-log">
-                </ul>
+            </ul>
         </div>
     </div>
 
