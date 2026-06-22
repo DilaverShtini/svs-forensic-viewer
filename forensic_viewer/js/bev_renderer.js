@@ -13,8 +13,8 @@ function drawBEV(frameData) {
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
 
-    const ego = frameData.ego_vehicle;
-    const egoYawRad = ego.rotation.yaw * (Math.PI / 180);
+    const ego = frameData.e;
+    const egoYawRad = ego.yaw * (Math.PI / 180);
 
     const roadWidthPx = 8 * SCALE; 
     
@@ -32,7 +32,7 @@ function drawBEV(frameData) {
 
     const forwardX = Math.cos(egoYawRad);
     const forwardY = Math.sin(egoYawRad);
-    const distanceTraveled = (ego.position.x * forwardX) + (ego.position.y * forwardY);
+    const distanceTraveled = (ego.x * forwardX) + (ego.y * forwardY);
     
     const dashPatternLength = 40; 
     const scrollOffset = (distanceTraveled * SCALE) % dashPatternLength;
@@ -48,9 +48,9 @@ function drawBEV(frameData) {
     ctx.stroke();
     
     ctx.setLineDash([]);
-    frameData.actors.forEach(actor => {
-        const deltaX = actor.position.x - ego.position.x;
-        const deltaY = actor.position.y - ego.position.y; 
+    frameData.a.forEach(actor => {
+        const deltaX = actor.x - ego.x;
+        const deltaY = actor.y - ego.y; 
 
         const relX = deltaX * Math.cos(egoYawRad) + deltaY * Math.sin(egoYawRad);
         const relY = -deltaX * Math.sin(egoYawRad) + deltaY * Math.cos(egoYawRad);
