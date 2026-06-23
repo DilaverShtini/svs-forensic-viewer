@@ -109,13 +109,8 @@ function togglePlay() {
 
 function generateCausalChain(events, telemetry) {
     if (!eventLogContainer) return;
-    eventLogContainer.innerHTML = ''; 
-    
-    const idToDescMap = {};
-    events.forEach(evt => {
-        idToDescMap[evt.id] = evt.desc;
-    });
-
+    eventLogContainer.innerHTML = '';
+    const eventMap = {};
     events.forEach(evt => {
         let targetFrameIndex = 0;
         let minDiff = Infinity;
@@ -126,7 +121,11 @@ function generateCausalChain(events, telemetry) {
                 targetFrameIndex = idx;
             }
         });
-        
+        evt.targetFrameIndex = targetFrameIndex;
+        eventMap[evt.id] = evt;
+    });
+
+    events.forEach(evt => {
         let eventType = 'perception';
         let color = '#38bdf8'; 
 
@@ -153,7 +152,7 @@ function generateCausalChain(events, telemetry) {
         li.style.marginTop = '6px';
         li.style.cursor = 'pointer';
         
-        li.dataset.index = targetFrameIndex;
+        li.dataset.index = evt.targetFrameIndex;
         li.dataset.type = eventType;
 
         li.innerHTML = `<span style="color: #94a3b8;">t=${parseFloat(evt.t).toFixed(2)}s:</span> <strong>${evt.desc}</strong>`;
@@ -166,23 +165,37 @@ function generateCausalChain(events, telemetry) {
             causeDiv.style.borderTop = '1px dashed #3f3f4e';
             causeDiv.style.paddingTop = '6px';
             
-            const causeTexts = evt.causes.map(causeId => {
-                return idToDescMap[causeId] ? idToDescMap[causeId] : causeId;
+            const introSpan = document.createElement('span');
+            introSpan.innerHTML = `↳ <strong style="color: #cbd5e1">Caused by:</strong> `;
+            causeDiv.appendChild(introSpan);
+            
+            evt.causes.forEach((causeId, index) => {
+                const causeEvt = eventMap[causeId];
+                const causeText = causeEvt ? causeEvt.desc : causeId;
+                
+                if (index > 0) {
+                    const separator = document.createElement('span');
+                    separator.innerHTML = `<br>↳ e da: `;
+                    causeDiv.appendChild(separator);
+                }
+                const linkSpan = document.createElement('span');
+                linkSpan.style.color = '#facc15';
+                linkSpan.style.cursor = 'pointer';
+                linkSpan.style.textDecoration = 'underline';
+                linkSpan.innerText = causeText;
+
+                if (causeEvt) {
+                    linkSpan.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        jumpToFrame(causeEvt.targetFrameIndex);
+                    });
+                }
+                causeDiv.appendChild(linkSpan);
             });
             
-            causeDiv.innerHTML = `↳ <strong style="color: #cbd5e1">Caused by:</strong> <span style="color: #facc15">${causeTexts.join(' <br>↳ e da: ')}</span>`;
             li.appendChild(causeDiv);
         }
-
-        const jumpIcon = document.createElement('span');
-        jumpIcon.style.float = 'right';
-        jumpIcon.style.fontSize = '0.8em';
-        jumpIcon.style.color = '#94a3b8';
-        
-        jumpIcon.style.marginTop = (evt.causes && evt.causes.length > 0) ? '-40px' : '-20px'; 
-        li.appendChild(jumpIcon);
-
-        li.addEventListener('click', () => jumpToFrame(targetFrameIndex));
+        li.addEventListener('click', () => jumpToFrame(evt.targetFrameIndex));
         eventLogContainer.appendChild(li);
     });
 }
