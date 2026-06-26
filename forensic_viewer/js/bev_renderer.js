@@ -62,7 +62,7 @@ function drawBEV(frameData) {
        if (actor.id.includes('van_volkswagen')) {
             ctx.fillStyle = '#38bdf8';
             ctx.fillRect(pixelX - 10, pixelY - 20, 20, 40); 
-        } else if(actor.id.includes('vehicle_stopped')){
+        } else if(actor.id.includes('car_audi')){
             ctx.fillStyle = '#f59e0b';
             ctx.fillRect(pixelX - 9, pixelY - 18, 18, 36);
         } else {

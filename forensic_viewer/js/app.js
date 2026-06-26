@@ -143,30 +143,20 @@ function generateCausalChain(events, telemetry) {
         }
 
         const li = document.createElement('li');
-        li.className = 'log-item active';
+        li.className = 'log-item active log-item-custom';
         li.style.borderLeft = `4px solid ${color}`; 
-        li.style.backgroundColor = '#1e1e2d';
-        li.style.border = '1px solid #3f3f4e';
-        li.style.borderRadius = '4px';
-        li.style.padding = '8px 12px';
-        li.style.marginTop = '6px';
-        li.style.cursor = 'pointer';
         
         li.dataset.index = evt.targetFrameIndex;
         li.dataset.type = eventType;
 
-        li.innerHTML = `<span style="color: #94a3b8;">t=${parseFloat(evt.t).toFixed(2)}s:</span> <strong>${evt.desc}</strong>`;
+        li.innerHTML = `<span class="log-time-span">t=${parseFloat(evt.t).toFixed(2)}s:</span> <strong>${evt.desc}</strong>`;
 
         if (evt.causes && evt.causes.length > 0) {
             const causeDiv = document.createElement('div');
-            causeDiv.style.marginTop = '8px';
-            causeDiv.style.fontSize = '0.85em';
-            causeDiv.style.color = '#94a3b8';
-            causeDiv.style.borderTop = '1px dashed #3f3f4e';
-            causeDiv.style.paddingTop = '6px';
+            causeDiv.className = 'cause-div';
             
             const introSpan = document.createElement('span');
-            introSpan.innerHTML = `↳ <strong style="color: #cbd5e1">Caused by:</strong> `;
+            introSpan.innerHTML = `↳ <strong class="cause-intro-strong">Caused by:</strong> `;
             causeDiv.appendChild(introSpan);
             
             evt.causes.forEach((causeId, index) => {
@@ -179,9 +169,7 @@ function generateCausalChain(events, telemetry) {
                     causeDiv.appendChild(separator);
                 }
                 const linkSpan = document.createElement('span');
-                linkSpan.style.color = '#facc15';
-                linkSpan.style.cursor = 'pointer';
-                linkSpan.style.textDecoration = 'underline';
+                linkSpan.className = 'cause-link-span';
                 linkSpan.innerText = causeText;
 
                 if (causeEvt) {
@@ -215,12 +203,7 @@ function renderTimelineMarkers(events, telemetry) {
         if (evt.desc.includes('braking')) color = '#f97316'; 
 
         const marker = document.createElement('div');
-        marker.className = 'timeline-marker';
-        marker.style.position = 'absolute';
-        marker.style.top = '0';
-        marker.style.height = '100%';
-        marker.style.width = '4px';
-        marker.style.cursor = 'pointer';
+        marker.className = 'timeline-marker timeline-marker-line';
         marker.style.left = `${percentage}%`;
         marker.style.backgroundColor = color;
         
@@ -250,7 +233,7 @@ function createLogItem(index, time, text, color, type) {
     const li = document.createElement('li');
     li.className = 'log-item';
     li.style.borderLeft = `4px solid ${color}`; 
-    li.innerHTML = `<span style="color: #94a3b8;">t=${parseFloat(time).toFixed(2)}s:</span> ${text}`;
+    li.innerHTML = `<span class="log-time-span">t=${parseFloat(time).toFixed(2)}s:</span> ${text}`;
     li.dataset.index = index; 
     li.dataset.type = type;
     li.style.display = 'none'; 
