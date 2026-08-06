@@ -340,7 +340,7 @@ hard_condition      = False
 soft_condition      = False
 save_queue          = None
 saver_thread        = None
-output_folder       = "dashcam_records"
+output_folder       = "forensic_viewer/dashcam_records"
 
 logger = FastCausalLogger()
 event_memory = {}
@@ -762,7 +762,7 @@ finally:
         # Restore original world settings and perform cleanup
         print("\n[Cleanup] starting the cleanup and saving process...")
         try:
-            logger.save('forensic_data.json')
+            logger.save('forensic_viewer/forensic_data.json')
             print(f"[Cleanup] File 'forensic_data.json' successfully saved.")
         except Exception as e:
             print(f"[Cleanup Error] unable to save causal JSON: {e}")
