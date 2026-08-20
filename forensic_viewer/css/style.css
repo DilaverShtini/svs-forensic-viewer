@@ -228,6 +228,7 @@ body {
     padding: 8px 12px;
     margin-top: 6px;
     cursor: pointer;
+    transition: background-color 1.5s ease-out;
 }
 
 .log-time-span {

@@ -62,7 +62,7 @@ function loadDashcamImageSmart(targetFrameNumber) {
     attemptLoad();
 }
 
-function updateDashboard(index) {
+function updateDashboard(index, forceEventId = null) {
     if (!simulationData[index]) return;
     const frameData = simulationData[index];
     currentFrameIndex = index;
@@ -72,15 +72,15 @@ function updateDashboard(index) {
     loadDashcamImageSmart(index);
     if (typeof drawBEV === 'function') drawBEV(frameData);
     if (typeof updateChartSync === 'function') updateChartSync(); 
-    updateDynamicLog(index);
+    updateDynamicLog(index, forceEventId);
 }
 
-function jumpToFrame(index) {
+function jumpToFrame(index, forceEventId = null) {
     if (isPlaying) {
         togglePlay();
     }
     currentFrameIndex = parseInt(index, 10);
-    updateDashboard(currentFrameIndex);
+    updateDashboard(currentFrameIndex, forceEventId);
 }
 
 function togglePlay() {
@@ -146,6 +146,7 @@ function generateCausalChain(events, telemetry) {
         
         li.dataset.index = evt.targetFrameIndex;
         li.dataset.type = eventType;
+        li.dataset.eventId = evt.id;
 
         li.innerHTML = `<span class="log-time-span">t=${parseFloat(evt.t).toFixed(2)}s:</span> <strong>${evt.desc}</strong>`;
 
@@ -173,7 +174,7 @@ function generateCausalChain(events, telemetry) {
                 if (causeEvt) {
                     linkSpan.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        jumpToFrame(causeEvt.targetFrameIndex);
+                        jumpToFrame(causeEvt.targetFrameIndex, causeEvt.id); 
                     });
                 }
                 causeDiv.appendChild(linkSpan);
@@ -216,22 +217,12 @@ function renderTimelineMarkers(events, telemetry) {
     });
 }
 
-function createLogItem(index, time, text, color, type) {
-    const li = document.createElement('li');
-    li.className = 'log-item';
-    li.style.borderLeft = `4px solid ${color}`; 
-    li.innerHTML = `<span class="log-time-span">t=${parseFloat(time).toFixed(2)}s:</span> ${text}`;
-    li.dataset.index = index; 
-    li.dataset.type = type;
-    li.style.display = 'none'; 
-    return li;
-}
-
-function updateDynamicLog(currentIndex) {
-    if(!eventLogContainer) return;
+function updateDynamicLog(currentIndex, forceEventId = null) {
+    if (!eventLogContainer) return;
 
     const logItems = eventLogContainer.querySelectorAll(':scope > .log-item');
-    let latestVisibleItem = null;
+    let targetActiveItem = null;
+    let lastChronologicalItem = null;
 
     logItems.forEach(item => {
         const itemIndex = parseInt(item.dataset.index, 10);
@@ -239,22 +230,38 @@ function updateDynamicLog(currentIndex) {
         const timeMatch = itemIndex <= currentIndex;
 
         const filterMatch = (currentFilter === 'all' || itemType === currentFilter);
-
         if (timeMatch && filterMatch) {
             item.style.display = 'block';
             item.classList.remove('active');
-            latestVisibleItem = item; 
+            lastChronologicalItem = item; 
+            
+            if (forceEventId && item.dataset.eventId === forceEventId) {
+                targetActiveItem = item;
+            }
         } else {
             item.style.display = 'none';
         }
     });
+    const itemToFocus = targetActiveItem || lastChronologicalItem;
 
-    if (latestVisibleItem) {
-        latestVisibleItem.classList.add('active');
+    if (itemToFocus) {
+        itemToFocus.classList.add('active');
+        
         eventLogContainer.scrollTo({
-            top: latestVisibleItem.offsetTop - eventLogContainer.offsetTop,
+            top: itemToFocus.offsetTop - eventLogContainer.offsetTop - 10,
             behavior: 'smooth'
         });
+        if (forceEventId) {
+            itemToFocus.style.transition = 'none';
+            itemToFocus.style.backgroundColor = 'rgba(250, 204, 21, 0.27)';
+            itemToFocus.style.borderLeftColor = '#facc15';
+            void itemToFocus.offsetWidth;
+            setTimeout(() => {
+                itemToFocus.style.transition = 'all 1.5s ease-out';
+                itemToFocus.style.backgroundColor = '';
+                itemToFocus.style.borderLeftColor = '';
+            }, 50);
+        }
     }
 }
 
