@@ -1,5 +1,4 @@
 let telemetryChart;
-// Variabili globali per memorizzare l'intero dataset
 let fullTimes = [];
 let fullSpeeds = [];
 let fullBrakes = [];

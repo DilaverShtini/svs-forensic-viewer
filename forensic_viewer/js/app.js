@@ -3,6 +3,8 @@ let currentFrameIndex = 0;
 let simulationData = []; 
 let playbackInterval;
 let currentFilter = 'all'; 
+let timeToFrameMap = {};
+let eventMap = {};
 
 const playBtn = document.getElementById('play-btn');
 const slider = document.getElementById('timeline-slider');
@@ -110,19 +112,15 @@ function togglePlay() {
 function generateCausalChain(events, telemetry) {
     if (!eventLogContainer) return;
     eventLogContainer.innerHTML = '';
-    const eventMap = {};
+
+    let currentFrameIdx = 0;
     events.forEach(evt => {
-        let targetFrameIndex = 0;
-        let minDiff = Infinity;
-        telemetry.forEach((frame, idx) => {
-            const diff = Math.abs(frame.t - evt.t);
-            if (diff < minDiff) {
-                minDiff = diff;
-                targetFrameIndex = idx;
-            }
-        });
-        evt.targetFrameIndex = targetFrameIndex;
         eventMap[evt.id] = evt;
+        while (currentFrameIdx < telemetry.length - 1 && Math.abs(telemetry[currentFrameIdx + 1].t - evt.t) < Math.abs(telemetry[currentFrameIdx].t - evt.t)) {
+            currentFrameIdx++;
+        }
+        timeToFrameMap[parseFloat(evt.t).toFixed(2)] = currentFrameIdx;
+        evt.targetFrameIndex = currentFrameIdx;
     });
 
     events.forEach(evt => {
@@ -206,22 +204,11 @@ function renderTimelineMarkers(events, telemetry) {
         marker.className = 'timeline-marker timeline-marker-line';
         marker.style.left = `${percentage}%`;
         marker.style.backgroundColor = color;
-        
         marker.title = `t=${parseFloat(evt.t).toFixed(2)}s: ${evt.desc}`; 
 
         marker.addEventListener('click', (e) => {
             e.stopPropagation();
-            
-            let targetFrameIdx = 0;
-            let minDiff = Infinity;
-            telemetry.forEach((frame, idx) => {
-                const diff = Math.abs(frame.t - evt.t);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    targetFrameIdx = idx;
-                }
-            });
-            
+            const targetFrameIdx = timeToFrameMap[parseFloat(evt.t).toFixed(2)];
             jumpToFrame(targetFrameIdx);
         });
 
