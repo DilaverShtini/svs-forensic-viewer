@@ -116,7 +116,7 @@ function generateCausalChain(events, telemetry) {
     let currentFrameIdx = 0;
     events.forEach(evt => {
         eventMap[evt.id] = evt;
-        while (currentFrameIdx < telemetry.length - 1 && Math.abs(telemetry[currentFrameIdx + 1].t - evt.t) < Math.abs(telemetry[currentFrameIdx].t - evt.t)) {
+        while (currentFrameIdx < telemetry.length - 1 && Math.abs(telemetry[currentFrameIdx + 1].t - evt.t) <= Math.abs(telemetry[currentFrameIdx].t - evt.t)) {
             currentFrameIdx++;
         }
         timeToFrameMap[parseFloat(evt.t).toFixed(2)] = currentFrameIdx;
@@ -190,26 +190,38 @@ function generateCausalChain(events, telemetry) {
 function renderTimelineMarkers(events, telemetry) {
     if (!timelineMarkersContainer) return;
     timelineMarkersContainer.innerHTML = '';
-    
     const maxTime = telemetry.length > 0 ? telemetry[telemetry.length - 1].t : 1;
-
+    const markerGroups = {};
     events.forEach(evt => {
-        const percentage = (evt.t / maxTime) * 100;
-        
-        let color = '#38bdf8'; 
-        if (evt.desc.includes('V2X')) color = '#a855f7'; 
-        if (evt.desc.includes('CRITICAL') || evt.desc.includes('Collision')) color = '#ef4444'; 
-        if (evt.desc.includes('braking')) color = '#f97316'; 
+        const timeKey = parseFloat(evt.t).toFixed(2);
+        if (!markerGroups[timeKey]) {
+            markerGroups[timeKey] = [];
+        }
+        markerGroups[timeKey].push(evt);
+    });
 
+    Object.values(markerGroups).forEach(group => {
+        const firstEvt = group[0];
+        const percentage = (firstEvt.t / maxTime) * 100;
+        const colors = [...new Set(group.map(evt => {
+            if (evt.desc.includes('V2X')) return '#a855f7';
+            if (evt.desc.includes('CRITICAL') || evt.desc.includes('Collision')) return '#ef4444';
+            if (evt.desc.includes('braking')) return '#f97316';
+            return '#38bdf8';
+        }))];
         const marker = document.createElement('div');
         marker.className = 'timeline-marker timeline-marker-line';
         marker.style.left = `${percentage}%`;
-        marker.style.backgroundColor = color;
-        marker.title = `t=${parseFloat(evt.t).toFixed(2)}s: ${evt.desc}`; 
-
+        
+        if (colors.length === 1) {
+            marker.style.backgroundColor = colors[0];
+        } else {
+            marker.style.background = `linear-gradient(to bottom, ${colors[0]} 50%, ${colors[1]} 50%)`;
+        }
+        marker.title = group.map(e => `t=${parseFloat(e.t).toFixed(2)}s: ${e.desc}`).join('\n'); 
         marker.addEventListener('click', (e) => {
             e.stopPropagation();
-            const targetFrameIdx = timeToFrameMap[parseFloat(evt.t).toFixed(2)];
+            const targetFrameIdx = timeToFrameMap[parseFloat(firstEvt.t).toFixed(2)];
             jumpToFrame(targetFrameIdx);
         });
 
