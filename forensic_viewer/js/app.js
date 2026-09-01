@@ -131,18 +131,19 @@ function generateCausalChain(events, telemetry) {
     events.forEach(evt => {
         let eventType = 'perception';
         let color = '#38bdf8'; 
+        
+        const safeId = evt.id.toLowerCase();
+        const safeDesc = evt.desc.toLowerCase();
 
-        if (evt.desc.includes('braking')) {
-            eventType = 'system';
-            color = '#f97316';
-        }
-        if (evt.desc.includes('V2X')) {
-            eventType = 'v2x';
-            color = '#a855f7';
-        }
-        if (evt.desc.includes('CRITICAL') || evt.desc.includes('Collision')) {
+        if (safeId.includes('critical') || safeId.includes('collision') || safeDesc.includes('critical') || safeDesc.includes('collision')) {
             eventType = 'critical';
             color = '#ef4444';
+        } else if (safeId.includes('v2x') || safeDesc.includes('v2x')) {
+            eventType = 'v2x';
+            color = '#a855f7';
+        } else if (safeId.includes('brake') || safeDesc.includes('braking')) {
+            eventType = 'system';
+            color = '#f97316';
         }
 
         const li = document.createElement('li');
@@ -152,7 +153,7 @@ function generateCausalChain(events, telemetry) {
         li.dataset.index = evt.targetFrameIndex;
         li.dataset.type = eventType;
         li.dataset.eventId = evt.id;
-
+        li.dataset.originalColor = color;
         li.innerHTML = `<span class="log-time-span">t=${parseFloat(evt.t).toFixed(2)}s:</span> <strong>${evt.desc}</strong>`;
 
         if (evt.causes && evt.causes.length > 0) {
@@ -209,9 +210,11 @@ function renderTimelineMarkers(events, telemetry) {
         const firstEvt = group[0];
         const percentage = (firstEvt.t / maxTime) * 100;
         const colors = [...new Set(group.map(evt => {
-            if (evt.desc.includes('V2X')) return '#a855f7';
-            if (evt.desc.includes('CRITICAL') || evt.desc.includes('Collision')) return '#ef4444';
-            if (evt.desc.includes('braking')) return '#f97316';
+            const safeId = evt.id.toLowerCase();
+            const safeDesc = evt.desc.toLowerCase();
+            if (safeId.includes('critical') || safeId.includes('collision') || safeDesc.includes('critical') || safeDesc.includes('collision')) return '#ef4444';
+            if (safeId.includes('v2x') || safeDesc.includes('v2x')) return '#a855f7';
+            if (safeId.includes('brake') || safeDesc.includes('braking')) return '#f97316';
             return '#38bdf8';
         }))];
         const marker = document.createElement('div');
@@ -276,7 +279,7 @@ function updateDynamicLog(currentIndex, forceEventId = null) {
             setTimeout(() => {
                 itemToFocus.style.transition = 'all 1.5s ease-out';
                 itemToFocus.style.backgroundColor = '';
-                itemToFocus.style.borderLeftColor = '';
+                itemToFocus.style.borderLeftColor = itemToFocus.dataset.originalColor; 
             }, 50);
         }
     }
