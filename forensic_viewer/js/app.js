@@ -113,14 +113,19 @@ function generateCausalChain(events, telemetry) {
     if (!eventLogContainer) return;
     eventLogContainer.innerHTML = '';
 
-    let currentFrameIdx = 0;
     events.forEach(evt => {
         eventMap[evt.id] = evt;
-        while (currentFrameIdx < telemetry.length - 1 && Math.abs(telemetry[currentFrameIdx + 1].t - evt.t) <= Math.abs(telemetry[currentFrameIdx].t - evt.t)) {
-            currentFrameIdx++;
+        
+        let targetIdx = telemetry.length - 1; 
+        for (let i = 0; i < telemetry.length; i++) {
+            if (telemetry[i].t >= evt.t) {
+                targetIdx = i;
+                break;
+            }
         }
-        timeToFrameMap[parseFloat(evt.t).toFixed(2)] = currentFrameIdx;
-        evt.targetFrameIndex = currentFrameIdx;
+        
+        evt.targetFrameIndex = targetIdx;
+        timeToFrameMap[parseFloat(evt.t).toFixed(2)] = targetIdx;
     });
 
     events.forEach(evt => {
