@@ -129,22 +129,9 @@ function generateCausalChain(events, telemetry) {
     });
 
     events.forEach(evt => {
-        let eventType = 'perception';
-        let color = '#38bdf8'; 
-        
-        const safeId = evt.id.toLowerCase();
-        const safeDesc = evt.desc.toLowerCase();
-
-        if (safeId.includes('critical') || safeId.includes('collision') || safeDesc.includes('critical') || safeDesc.includes('collision')) {
-            eventType = 'critical';
-            color = '#ef4444';
-        } else if (safeId.includes('v2x') || safeDesc.includes('v2x')) {
-            eventType = 'v2x';
-            color = '#a855f7';
-        } else if (safeId.includes('brake') || safeDesc.includes('braking')) {
-            eventType = 'system';
-            color = '#f97316';
-        }
+        const classification = getEventClassification(evt);
+        const eventType = classification.type;
+        const color = classification.color;
 
         const li = document.createElement('li');
         li.className = 'log-item active log-item-custom';
@@ -193,6 +180,22 @@ function generateCausalChain(events, telemetry) {
     });
 }
 
+function getEventClassification(evt) {
+    const safeId = evt.id.toLowerCase();
+    const safeDesc = evt.desc.toLowerCase();
+
+    if (safeId.includes('critical') || safeId.includes('collision') || safeDesc.includes('critical') || safeDesc.includes('collision')) {
+        return { type: 'critical', color: '#ef4444' };
+    }
+    if (safeId.includes('brake') || safeDesc.includes('braking')) {
+        return { type: 'system', color: '#f97316' };
+    }
+    if (safeId.includes('v2x') || safeDesc.includes('v2x')) {
+        return { type: 'v2x', color: '#a855f7' };
+    }
+    return { type: 'perception', color: '#38bdf8' };
+}
+
 function renderTimelineMarkers(events, telemetry) {
     if (!timelineMarkersContainer) return;
     timelineMarkersContainer.innerHTML = '';
@@ -209,14 +212,7 @@ function renderTimelineMarkers(events, telemetry) {
     Object.values(markerGroups).forEach(group => {
         const firstEvt = group[0];
         const percentage = (firstEvt.t / maxTime) * 100;
-        const colors = [...new Set(group.map(evt => {
-            const safeId = evt.id.toLowerCase();
-            const safeDesc = evt.desc.toLowerCase();
-            if (safeId.includes('critical') || safeId.includes('collision') || safeDesc.includes('critical') || safeDesc.includes('collision')) return '#ef4444';
-            if (safeId.includes('v2x') || safeDesc.includes('v2x')) return '#a855f7';
-            if (safeId.includes('brake') || safeDesc.includes('braking')) return '#f97316';
-            return '#38bdf8';
-        }))];
+        const colors = [...new Set(group.map(evt => getEventClassification(evt).color))];
         const marker = document.createElement('div');
         marker.className = 'timeline-marker timeline-marker-line';
         marker.style.left = `${percentage}%`;
