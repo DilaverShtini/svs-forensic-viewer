@@ -15,7 +15,7 @@ const timelineMarkersContainer = document.getElementById('timeline-markers');
 
 async function initViewer() {
     try {
-        const response = await fetch('forensic_data.json');
+        const response = await fetch('./forensic_data.json');
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         const fullData = await response.json();
@@ -47,7 +47,7 @@ function loadDashcamImageSmart(targetFrameNumber) {
 
         const testFrameNumber = targetFrameNumber + offsetsToTry[currentTryIndex];
         const formattedNumber = String(testFrameNumber).padStart(6, '0');
-        const tentativeSrc = `/dashcam_records/frame_${formattedNumber}.jpg`;
+        const tentativeSrc = `./dashcam_records/frame_${formattedNumber}.jpg`;
 
         const tempImg = new Image();
         tempImg.onload = () => { dashcamImg.src = tentativeSrc; };
