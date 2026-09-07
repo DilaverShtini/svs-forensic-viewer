@@ -19,7 +19,6 @@ world = client.get_world()
 traffic_manager = client.get_trafficmanager(8000)
 traffic_manager.set_synchronous_mode(True)
 
-original_settings = world.get_settings()
 settings = world.get_settings()
 settings.synchronous_mode = True
 settings.fixed_delta_seconds = 0.05
@@ -29,29 +28,26 @@ settings.max_substeps = 10
 settings.no_rendering_mode = False
 world.apply_settings(settings)
 
-
 # Clear any existing actors from the world
 for _ in range(2):
     actors_to_destroy = []
     actors_to_destroy.extend(world.get_actors().filter('sensor.*'))   
     actors_to_destroy.extend(world.get_actors().filter('vehicle.*'))
     actors_to_destroy.extend(world.get_actors().filter('walker.*'))
-    
+
     for actor in actors_to_destroy:
         if actor is not None and actor.is_alive:
             try:
                 actor.destroy()
             except RuntimeError:
                 pass
-            
+
     world.tick()
     world.tick()
 
 time.sleep(0.5)
 
-carla_map = world.get_map()
 spectator = world.get_spectator()
-
 
 # MQTT client setup
 v2x_event     = threading.Event()
@@ -80,8 +76,6 @@ def on_mqtt_message(client, userdata, msg, properties = None):
         if msg.payload.decode("utf-8") == "PEDESTRIAN_DETECTED":
             v2x_event.set()
 
-mqtt_client.on_message = on_mqtt_message
-
 mqtt_client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
 mqtt_client.on_message = on_mqtt_message
 
@@ -90,19 +84,19 @@ try:
     mqtt_client.connect("test.mosquitto.org", 8081, 60)
     mqtt_client.subscribe("carla/svs/8/v2x/warning")
     mqtt_client.loop_start()
-    
+
     connection_timeout = 50
     while connection_timeout > 0:
         if mqtt_client.is_connected():
             break
         time.sleep(0.1)
         connection_timeout -= 1
-        
+
     if mqtt_client.is_connected():
         print(f"Connected at test.mosquitto.org: {unique_client_id}")
     else:
         print("[WARN] Timeout MQTT — V2X simulated")
-        
+
 except Exception as e:
     print(f"Error MQTT: {e}. V2X simulated.")
 
@@ -138,7 +132,7 @@ def spawn_camera(world, attach_to, transform):
     bp = world.get_blueprint_library().find('sensor.camera.rgb')
     bp.set_attribute('image_size_x', '800')
     bp.set_attribute('image_size_y', '600')
-    
+
     bp.set_attribute('sensor_tick', '0.2') 
 
     if bp.has_attribute("role_name"):
@@ -180,7 +174,7 @@ class FrontRadarTracker:
     # Update the tracker with new radar points
     def update(self, filtered_radar_points):
         self.front_count = len(filtered_radar_points)
-        
+
         if not filtered_radar_points:
             self.distance_m = None
             self.closing_speed_mps = None
@@ -214,20 +208,19 @@ class FrontRadarTracker:
         else:
             self.ttc_s = float("inf")
 
-
 # Filter radar detections to only include those within the lane boundaries and within a certain height range
 def filter_detections_in_lane(radar_data, half_lane_width=1.75, sensor_height_m=1.2):
-    
+
     filtered_points = []
-    
+
     for det in radar_data:
         x_front = det.depth * math.cos(det.azimuth) * math.cos(det.altitude)
         y_lateral = det.depth * math.sin(det.azimuth) * math.cos(det.altitude)
         z_height = det.depth * math.sin(det.altitude)
-        
+
         if z_height < -(sensor_height_m - 0.2) or z_height > 1.0:
             continue
-            
+
         if abs(y_lateral) <= half_lane_width:
             filtered_points.append({
                 "x": x_front,
@@ -235,7 +228,7 @@ def filter_detections_in_lane(radar_data, half_lane_width=1.75, sensor_height_m=
                 "z": z_height,
                 "rel_velocity": det.velocity
             })
-            
+
     return filtered_points
 
 
@@ -271,17 +264,16 @@ class FastCausalLogger:
             },
             "a": actors_data  
         }
-        
+
         if active_events:
             frame_data["active"] = active_events
-            
+
         self.telemetry.append(frame_data)
 
     # Save the logged events and telemetry data to a JSON file
     def save(self, filepath):
         with open(filepath, 'w') as f:
             json.dump({"events": self.events, "telemetry": self.telemetry}, f, indent=4)
-
 
 actors = []
 ego = None
@@ -369,7 +361,6 @@ try:
     van_bp = world.get_blueprint_library().find('vehicle.volkswagen.t2')
     target = world.spawn_actor(van_bp, carla.Transform(van_loc + carla.Location(z=0.5), spawn_tf.rotation))
     actors.append(target)
-    
 
     ped_spawn_loc = van_loc + fwd * 2.8 + side * 1.5
     ped_bp = world.get_blueprint_library().find('walker.pedestrian.0001')
@@ -380,7 +371,7 @@ try:
     stopped_car_bp = world.get_blueprint_library().find('vehicle.audi.tt')
     stopped_car = world.spawn_actor(stopped_car_bp, carla.Transform(stopped_car_loc + carla.Location(z=0.5), spawn_tf.rotation))
     actors.append(stopped_car)
-    
+
     stopped_car.set_autopilot(False)
     stopped_car.apply_control(carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=True))
 
@@ -396,12 +387,12 @@ try:
     # Callback function to process radar measurements
     def on_radar(measurement):
         radar_state["raw"] = len(measurement)
-        
+
         lane_points = filter_detections_in_lane(measurement, half_lane_width=lane_width_state["value"])
-        
+
         current_max_depth = lane_width_state["max_depth_m"]
         depth_filtered_points = []
-        
+
         for p in lane_points:
             if isinstance(p, dict):
                 p_depth = p.get('depth', p.get('x', 0.0))
@@ -409,7 +400,7 @@ try:
                 p_depth = p.depth
             if p_depth <= current_max_depth:
                 depth_filtered_points.append(p)
-        
+
         radar_state["filtered"] = len(depth_filtered_points)
         tracker.update(depth_filtered_points)
 
@@ -440,8 +431,7 @@ try:
     saver_thread.start()
 
     total_steps = int(DURATION_SECONDS / DT)
-    print_step = max(1, int(1.0 / DT))
-    
+
     traffic_manager.ignore_vehicles_percentage(ego, 100.0)
     traffic_manager.ignore_walkers_percentage(ego, 100.0)
     traffic_manager.vehicle_percentage_speed_difference(ego, 2.0)
@@ -455,9 +445,6 @@ try:
 
     for _ in range(20):
         world.tick()
-
-    target_tf = target.get_transform()
-    target_loc = target.get_location()
 
     camera_state = {"local_frame": 0}
 
@@ -488,7 +475,7 @@ try:
 
         raw_steer = ego.get_control().steer
         steer_abs = abs(raw_steer)
-        
+
         if steer_abs > 0.04:
             dynamic_width = 1.50 - (steer_abs * 3.5)
             dynamic_depth = 60.0 - (steer_abs * 95.0) 
@@ -546,7 +533,7 @@ try:
                 if published:
                     v2x_sent_flag.set()
                     v2x_time_sent = time_sim_s
-                    
+
                     evt_id2 = "e_v2x_sent"
                     logger.log_event(evt_id2, time_sim_s, "Van sends V2X message", [event_memory.get("ped_cross")])
                     event_memory["v2x_sent"] = evt_id2
@@ -566,10 +553,10 @@ try:
 
             evt_id_crash = "e_collision_ped"
             causes = []
-            
+
             if "ped_cross" in event_memory:
                 causes.append(event_memory["ped_cross"])
-                
+
             if "aeb_active" in event_memory:
                 causes.append(event_memory["aeb_active"])
             elif "hard_brake" in event_memory: 
@@ -577,7 +564,7 @@ try:
 
             impact_kmh = round(v_kmh, 1)
             desc = f"Collision with pedestrian recorded. Impact speed: {impact_kmh} km/h"
-            
+
             logger.log_event(evt_id_crash, time_sim_s, desc, causes)
             event_memory["collision"] = evt_id_crash
             current_frame_events.append(evt_id_crash)
@@ -588,7 +575,7 @@ try:
         if time_sim_s >= AUDI_RESTART_TIME and not audi_restarted:
             audi_speed_limit = stopped_car.get_speed_limit()
             if audi_speed_limit > 0.0:
-                audi_diff_percent = max(-300.0, 30.0)
+                audi_diff_percent = CRUISE_SPEED_KMH
                 traffic_manager.vehicle_percentage_speed_difference(stopped_car, audi_diff_percent)
             stopped_car.apply_control(carla.VehicleControl(throttle=0.0, brake=0.0, hand_brake=False))
             stopped_car.set_autopilot(True)
@@ -663,7 +650,7 @@ try:
             logger.log_event(evt_id_aeb, time_sim_s, "System applies emergency braking", causes_aeb)
             event_memory["aeb_active"] = evt_id_aeb
             current_frame_events.append(evt_id_aeb)
-            
+
             v2x_logged = True
 
         # Determine target throttle and brake values based on the current conditions
@@ -729,7 +716,7 @@ try:
         # Log telemetry data at specified intervals
         if step % LOG_INTERVAL == 0:
             current_actors = []
-            
+
             for obs in obstacles:
                 loc = obs["actor"].get_location()
                 current_actors.append({
@@ -737,7 +724,7 @@ try:
                     "x": round(loc.x, 2), 
                     "y": round(loc.y, 2)
                 })
-                
+
             current_actors.append({
                 "id": "pedestrian", 
                 "x": round(ped_current_loc.x, 2), 
@@ -779,7 +766,7 @@ finally:
             print("[Cleanup] MQTT disconnected.")
         except:
             pass
-        
+
         if radar is not None:
             try: radar.stop()
             except Exception: pass
@@ -812,6 +799,3 @@ finally:
             print("[Cleanup] CARLA server restored to asynchronous mode.")
         except Exception as e:
             print(f"[CRITICAL ERROR] Unable to restore async mode — restart CARLA manually: {e}")
-
-
-
