@@ -33,7 +33,7 @@ pip install -r requirements.txt
 3. Run the CARLA simulator and wait for it to be fully loaded.
 4. Start the backend script to simulate a scenario and generate logs:
 ```bash
-python carla_backend/simulazione_forense.py
+python carla_backend/simulation.py
 ```
 5. Run the frontend server:
 ```bash
