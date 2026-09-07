@@ -53,6 +53,7 @@ spectator = world.get_spectator()
 v2x_event     = threading.Event()
 v2x_sent_flag = threading.Event()
 v2x_time_sent = 0.0
+v2x_t_sent_extracted = 0.0
 NETWORK_DELAY = 1.5
 
 unique_client_id = f"Tesla_Ego_{random.randint(10000, 99999)}"
@@ -72,9 +73,15 @@ if 'mqtt_client' in globals():
 
 # MQTT callback function
 def on_mqtt_message(client, userdata, msg, properties = None):
+    global v2x_t_sent_extracted
     if msg.topic == "carla/svs/8/v2x/warning":
-        if msg.payload.decode("utf-8") == "PEDESTRIAN_DETECTED":
-            v2x_event.set()
+        try:
+            data = json.loads(msg.payload.decode("utf-8"))
+            if data.get("msg") == "PEDESTRIAN_DETECTED":
+                v2x_t_sent_extracted = data.get("t_sent", 0.0)
+                v2x_event.set()
+        except Exception:
+            pass
 
 mqtt_client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
 mqtt_client.on_message = on_mqtt_message
@@ -132,7 +139,6 @@ def spawn_camera(world, attach_to, transform):
     bp = world.get_blueprint_library().find('sensor.camera.rgb')
     bp.set_attribute('image_size_x', '800')
     bp.set_attribute('image_size_y', '600')
-
     bp.set_attribute('sensor_tick', '0.2') 
 
     if bp.has_attribute("role_name"):
@@ -161,8 +167,60 @@ def spawn_radar(
         bp.set_attribute("role_name", "forensic_mrr_radar")
     return world.spawn_actor(bp, transform, attach_to=attach_to)
 
+def spawn_collision(world, attach_to):
+    bp = world.get_blueprint_library().find('sensor.other.collision')
+    if bp.has_attribute("role_name"):
+        bp.set_attribute("role_name", "forensic_collision")
+    return world.spawn_actor(bp, carla.Transform(), attach_to=attach_to)
 
-# Class to track the closest object detected by the radar
+class RadarPerception:
+    def __init__(self, eps_m=3.0, min_points=2):
+        self.eps = eps_m
+        self.min_points = min_points
+        self.detected_clusters_local = []
+
+    def update(self, raw_radar_data):
+        points = []
+        for det in raw_radar_data:
+            x = det.depth * math.cos(det.azimuth) * math.cos(det.altitude)
+            y = det.depth * math.sin(det.azimuth) * math.cos(det.altitude)
+            z = det.depth * math.sin(det.altitude)
+
+            if -1.0 < z < 2.0:
+                points.append(np.array([x, y]))
+
+        if len(points) < self.min_points:
+            self.detected_clusters_local = []
+            return
+
+        pts = np.array(points)
+        clusters = []
+        visited = set()
+        
+        for i, p in enumerate(pts):
+            if i in visited: continue
+            dists = np.linalg.norm(pts - p, axis=1)
+            neighbors = np.where(dists < self.eps)[0]
+            
+            if len(neighbors) >= self.min_points:
+                visited.update(neighbors)
+                cluster_pts = pts[neighbors]
+                
+                cx = np.mean(cluster_pts[:, 0])
+                cy = np.mean(cluster_pts[:, 1])
+                
+                length = np.ptp(cluster_pts[:, 0])
+                width = np.ptp(cluster_pts[:, 1])
+                
+                length = max(length, 0.8)
+                width = max(width, 0.8)
+                
+                clusters.append((cx, cy, width, length))
+                
+        self.detected_clusters_local = clusters
+
+radar_perception = RadarPerception(eps_m=3.5, min_points=3)
+
 class FrontRadarTracker:
     def __init__(self, azimuth_limit_deg=40.0, altitude_limit_deg=4.0, min_depth_m=0.2):
         self.min_depth_m = min_depth_m
@@ -210,9 +268,7 @@ class FrontRadarTracker:
 
 # Filter radar detections to only include those within the lane boundaries and within a certain height range
 def filter_detections_in_lane(radar_data, half_lane_width=1.75, sensor_height_m=1.2):
-
     filtered_points = []
-
     for det in radar_data:
         x_front = det.depth * math.cos(det.azimuth) * math.cos(det.altitude)
         y_lateral = det.depth * math.sin(det.azimuth) * math.cos(det.altitude)
@@ -228,7 +284,6 @@ def filter_detections_in_lane(radar_data, half_lane_width=1.75, sensor_height_m=
                 "z": z_height,
                 "rel_velocity": det.velocity
             })
-
     return filtered_points
 
 
@@ -267,7 +322,6 @@ class FastCausalLogger:
 
         if active_events:
             frame_data["active"] = active_events
-
         self.telemetry.append(frame_data)
 
     # Save the logged events and telemetry data to a JSON file
@@ -300,7 +354,7 @@ SOFT_DIST_M = 5.0
 HARD_DIST_M = 2.8
 SOFT_TTC_S = 2.0
 HARD_TTC_S = 1.0
-AUDI_RESTART_TIME = 20.0
+AUDI_RESTART_TIME = 16.0
 
 SOFT_TTC_S_OFF = 3.5 
 SOFT_DIST_OFF  = 8.0 
@@ -324,15 +378,18 @@ hold_counter        = 0
 dist_ped            = float('inf')
 ped_triggered       = False
 ped_fallen          = False
-dist_dec_logged = False
-soft_brake_logged = False
-hard_brake_logged = False
+dist_dec_logged     = False
+soft_brake_logged   = False
+hard_brake_logged   = False
 v2x_logged          = False
 hard_condition      = False
 soft_condition      = False
 save_queue          = None
 saver_thread        = None
 output_folder       = "forensic_viewer/dashcam_records"
+occlusion_logged    = False
+radar_miss_logged   = False
+time_dist_dec       = 0.0
 
 logger = FastCausalLogger()
 event_memory = {}
@@ -387,19 +444,10 @@ try:
     # Callback function to process radar measurements
     def on_radar(measurement):
         radar_state["raw"] = len(measurement)
-
+        radar_perception.update(measurement)
         lane_points = filter_detections_in_lane(measurement, half_lane_width=lane_width_state["value"])
-
         current_max_depth = lane_width_state["max_depth_m"]
-        depth_filtered_points = []
-
-        for p in lane_points:
-            if isinstance(p, dict):
-                p_depth = p.get('depth', p.get('x', 0.0))
-            else:
-                p_depth = p.depth
-            if p_depth <= current_max_depth:
-                depth_filtered_points.append(p)
+        depth_filtered_points = [p for p in lane_points if (p.get('depth', p.get('x', 0.0)) if isinstance(p, dict) else p.depth) <= current_max_depth]
 
         radar_state["filtered"] = len(depth_filtered_points)
         tracker.update(depth_filtered_points)
@@ -409,6 +457,25 @@ try:
     cam_tf = carla.Transform(carla.Location(x=1.5, z=2.4), carla.Rotation(pitch=-5.0))
     camera = spawn_camera(world, ego, cam_tf)
     actors.append(camera)
+
+    collision_sensor = spawn_collision(world, ego)
+    actors.append(collision_sensor)
+
+    collision_state = {
+        "has_collided": False,
+        "other_actor_id": None,
+        "impulse_kg_m_s": 0.0
+    }
+
+    def on_collision(event):
+        collision_state["has_collided"] = True
+        collision_state["other_actor_id"] = event.other_actor.type_id
+        
+        impulse = event.normal_impulse
+        intensity = math.sqrt(impulse.x**2 + impulse.y**2 + impulse.z**2)
+        collision_state["impulse_kg_m_s"] = intensity
+
+    collision_sensor.listen(on_collision)
 
     save_queue = image_queue_module.Queue(maxsize=100)
 
@@ -439,9 +506,6 @@ try:
     ego.set_autopilot(True)
     autopilot_active    = True
     last_known_steer    = 0.0
-
-    obstacles = [{"id": "van_volkswagen", "actor": target, "passed": False},
-                 {"id": "car_audi", "actor": stopped_car, "passed": False}]
 
     for _ in range(20):
         world.tick()
@@ -489,24 +553,6 @@ try:
         lane_width_state["max_depth_m"]  = float(np.clip(dynamic_depth, 15.0, 100.0))
         lane_width_state["swivel_rad"]   = math.radians(swivel_deg)
 
-        for obs in obstacles:
-            if not obs["passed"]:
-                ego_to_obs = obs["actor"].get_location() - ego_loc
-                longitudinal = ego_to_obs.x * fwd.x + ego_to_obs.y * fwd.y
-                if longitudinal < -3.0:
-                    obs["passed"] = True
-
-        active_obstacle = next((o for o in obstacles if not o["passed"]), None)
-
-        if active_obstacle:
-            current_target_id = active_obstacle["id"]
-            current_target_loc = active_obstacle["actor"].get_location()
-            dist_active_target = ego_loc.distance(current_target_loc)
-        else:
-            current_target_id = "None"
-            current_target_loc = None
-            dist_active_target = float('inf')
-
         dist_ped = ego_loc.distance(ped_current_loc)
 
         # Pedestrian crossing logic
@@ -517,61 +563,76 @@ try:
             ped.apply_control(control)
             ped_triggered = True
 
-            evt_id1 = "e_ped_cross"
-            logger.log_event(evt_id1, time_sim_s, "Pedestrian enters the street in front of the van", [])
-            event_memory["ped_cross"] = evt_id1
-            current_frame_events.append(evt_id1)
-
-            # V2X message sending logic
+            # V2X message sending logic (via furgone, non loggato da ego)
             if not v2x_sent_flag.is_set():
-                published = False
                 try:
-                    mqtt_client.publish("carla/svs/8/v2x/warning", "PEDESTRIAN_DETECTED")
-                    published = True
+                    payload = json.dumps({"msg": "PEDESTRIAN_DETECTED", "t_sent": round(time_sim_s, 2)})
+                    mqtt_client.publish("carla/svs/8/v2x/warning", payload)
+                    v2x_sent_flag.set()
                 except Exception:
                     pass
-                if published:
-                    v2x_sent_flag.set()
-                    v2x_time_sent = time_sim_s
 
-                    evt_id2 = "e_v2x_sent"
-                    logger.log_event(evt_id2, time_sim_s, "Van sends V2X message", [event_memory.get("ped_cross")])
-                    event_memory["v2x_sent"] = evt_id2
-                    current_frame_events.append(evt_id2)
+        # Collision logic
+        # --- CALCOLO DINAMICO DELL'OCCLUSIONE ---
+        large_obstacle_present = False
+        small_obstacle_present = False
+        
+        for cx, cy, w, l in radar_perception.detected_clusters_local:
+            if w > 1.2 or l > 1.2:
+                large_obstacle_present = True
+            else:
+                small_obstacle_present = True
 
-        # Pedestrian collision logic
-        if dist_ped <= 4.0 and not ped_fallen and ped_triggered:
-            control.speed = 0.0
-            ped.apply_control(control)
-            current_transform = ped.get_transform()
-            new_rotation = carla.Rotation(pitch=-90.0, yaw=current_transform.rotation.yaw, roll=0.0)
-            new_location = current_transform.location
-            new_location.z -= 0.8 
-            ped.set_transform(carla.Transform(new_location, new_rotation))
-            ped.set_collisions(False)
-            ped_fallen = True
+        # Se sappiamo che c'è un pedone (v2x event), vediamo un ostacolo grande 
+        # ma NON vediamo l'ostacolo piccolo -> deduciamo matematicamente l'occlusione.
+        if v2x_event.is_set() and large_obstacle_present and not small_obstacle_present:
+            if not occlusion_logged:
+                evt_occlusion = "e_ped_occluded"
+                logger.log_event(evt_occlusion, time_sim_s, "Large obstacle inferred to be occluding sensor view", [])
+                event_memory["ped_occluded"] = evt_occlusion
+                current_frame_events.append(evt_occlusion)
+                occlusion_logged = True
+                
+            if not radar_miss_logged:
+                evt_miss = "e_radar_miss"
+                logger.log_event(evt_miss, time_sim_s, "Radar failed to detect pedestrian", [event_memory["ped_occluded"]])
+                event_memory["radar_miss"] = evt_miss
+                current_frame_events.append(evt_miss)
+                radar_miss_logged = True
 
-            evt_id_crash = "e_collision_ped"
-            causes = []
 
-            if "ped_cross" in event_memory:
-                causes.append(event_memory["ped_cross"])
+        if collision_state["has_collided"] and not ped_fallen and ped_triggered:
+            if "walker.pedestrian" in collision_state["other_actor_id"]:
+                control.speed = 0.0
+                ped.apply_control(control)
 
-            if "aeb_active" in event_memory:
-                causes.append(event_memory["aeb_active"])
-            elif "hard_brake" in event_memory: 
-                causes.append(event_memory["hard_brake"])
+                current_transform = ped.get_transform()
+                new_rotation = carla.Rotation(pitch=-90.0, yaw=current_transform.rotation.yaw, roll=0.0)
+                new_location = current_transform.location
+                new_location.z -= 0.8 
+                ped.set_transform(carla.Transform(new_location, new_rotation))
+                ped.set_collisions(False)
+                ped_fallen = True
 
-            impact_kmh = round(v_kmh, 1)
-            desc = f"Collision with pedestrian recorded. Impact speed: {impact_kmh} km/h"
+                evt_id_crash = "e_collision_ped"
+                causes = []
 
-            logger.log_event(evt_id_crash, time_sim_s, desc, causes)
-            event_memory["collision"] = evt_id_crash
-            current_frame_events.append(evt_id_crash)
+                late_detection = dist_dec_logged and (time_sim_s - time_dist_dec) < 1.0
+                
+                if "radar_miss" in event_memory and (not small_obstacle_present or late_detection):
+                    causes.append(event_memory["radar_miss"])
+                elif "aeb_active" in event_memory:
+                    causes.append(event_memory["aeb_active"])
+                elif "hard_brake" in event_memory:
+                    causes.append(event_memory["hard_brake"])
 
-        target_name = current_target_id if current_target_id != "None" else "Unknown Object"
+                impact_kmh = round(v_kmh, 1)
+                desc = f"Collision detected. Impact Speed: {impact_kmh} km/h"
 
-        # Adjust the Audi's speed limit and restart it after a certain time
+                logger.log_event(evt_id_crash, time_sim_s, desc, causes)
+                event_memory["collision"] = evt_id_crash
+                current_frame_events.append(evt_id_crash)
+
         if time_sim_s >= AUDI_RESTART_TIME and not audi_restarted:
             audi_speed_limit = stopped_car.get_speed_limit()
             if audi_speed_limit > 0.0:
@@ -590,7 +651,6 @@ try:
                 (ttc is None or not math.isfinite(ttc) or ttc > HARD_TTC_S_OFF)
             )
 
-        # Update soft braking conditions based on distance and time-to-collision
         if not soft_condition:
             soft_condition = (d is not None and d < SOFT_DIST_M) or (ttc is not None and ttc < SOFT_TTC_S)
         else:
@@ -599,16 +659,16 @@ try:
                 (ttc is None or not math.isfinite(ttc) or ttc > SOFT_TTC_S_OFF)
             )
 
-        # Log events for distance decrease, soft braking, and hard braking
         if soft_condition and not dist_dec_logged:
-            evt_dist = "e_dist_dec"
-            logger.log_event(evt_dist, time_sim_s, f"Radar detects a significant decrease in distance from the {target_name}", causes=[])
+            evt_dist = f"e_dist_dec_{time_sim_s}"
+            time_dist_dec = time_sim_s
+            logger.log_event(evt_dist, time_sim_s, "Radar detects a decrease in distance from the obstacle", causes=[])
             event_memory["dist_dec"] = evt_dist
             current_frame_events.append(evt_dist)
             dist_dec_logged = True
 
         if soft_condition and not hard_condition and not soft_brake_logged:
-            evt_soft = "e_soft_brake"
+            evt_soft = f"e_soft_brake_{time_sim_s}"
             causes = [event_memory.get("dist_dec")] if "dist_dec" in event_memory else []
             logger.log_event(evt_soft, time_sim_s, "System applies soft braking", causes)
             event_memory["soft_brake"] = evt_soft
@@ -616,7 +676,7 @@ try:
             soft_brake_logged = True
 
         if hard_condition and not hard_brake_logged:
-            evt_hard = "e_hard_brake"
+            evt_hard = f"e_hard_brake_{time_sim_s}"
             causes = [event_memory.get("dist_dec")] if "dist_dec" in event_memory else []
             logger.log_event(evt_hard, time_sim_s, "System applies emergency braking", causes)
             event_memory["hard_brake"] = evt_hard
@@ -632,16 +692,17 @@ try:
         # Check if V2X warning conditions are met and log the event
         v2x_condition = (
             v2x_event.is_set() and
-            v2x_sent_flag.is_set() and
-            v2x_time_sent > 0.0 and
-            (time_sim_s - v2x_time_sent) >= NETWORK_DELAY and
-            (time_sim_s - v2x_time_sent) <= (NETWORK_DELAY + V2X_ACTIVE_DURATION)
+            v2x_t_sent_extracted > 0.000 and
+            (time_sim_s - v2x_t_sent_extracted) >= NETWORK_DELAY and
+            (time_sim_s - v2x_t_sent_extracted) <= (NETWORK_DELAY + V2X_ACTIVE_DURATION)
         )
 
         if v2x_condition and not v2x_logged:
+            delay = round(time_sim_s - v2x_t_sent_extracted, 2)
             evt_id_rx = "e_v2x_rx"
-            causes_rx = [event_memory.get("v2x_sent")] if "v2x_sent" in event_memory else []
-            logger.log_event(evt_id_rx, time_sim_s, "V2X Warning received", causes_rx)
+            desc = f"V2X Warning received. Warning sent {delay} seconds ago"
+            
+            logger.log_event(evt_id_rx, time_sim_s, desc, causes=[])
             event_memory["v2x_rx"] = evt_id_rx
             current_frame_events.append(evt_id_rx)
 
@@ -717,19 +778,26 @@ try:
         if step % LOG_INTERVAL == 0:
             current_actors = []
 
-            for obs in obstacles:
-                loc = obs["actor"].get_location()
-                current_actors.append({
-                    "id": obs["id"], 
-                    "x": round(loc.x, 2), 
-                    "y": round(loc.y, 2)
-                })
+            def local_to_global(ego_tf, lx, ly):
+                yaw = math.radians(ego_tf.rotation.yaw)
+                lx_compensated = lx + 2.7
+                gx = ego_tf.location.x + lx_compensated * math.cos(yaw) - ly * math.sin(yaw)
+                gy = ego_tf.location.y + lx_compensated * math.sin(yaw) + ly * math.cos(yaw)
+                return gx, gy
 
-            current_actors.append({
-                "id": "pedestrian", 
-                "x": round(ped_current_loc.x, 2), 
-                "y": round(ped_current_loc.y, 2)
-            })
+            radar_clusters_global = [
+                (local_to_global(ego_tf, cx, cy), w, l) 
+                for cx, cy, w, l in radar_perception.detected_clusters_local
+            ]
+
+            for idx, ((gx, gy), w, l) in enumerate(radar_clusters_global):
+                current_actors.append({
+                    "id": f"radar_target_{idx}", 
+                    "x": round(gx, 2), 
+                    "y": round(gy, 2),
+                    "w": round(w, 2),
+                    "l": round(l, 2)
+                })
 
             logger.log_telemetry(
                 frame=step,

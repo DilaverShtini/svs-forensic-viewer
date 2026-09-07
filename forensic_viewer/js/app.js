@@ -200,19 +200,33 @@ function renderTimelineMarkers(events, telemetry) {
     if (!timelineMarkersContainer) return;
     timelineMarkersContainer.innerHTML = '';
     const maxTime = telemetry.length > 0 ? telemetry[telemetry.length - 1].t : 1;
-    const markerGroups = {};
-    events.forEach(evt => {
-        const timeKey = parseFloat(evt.t).toFixed(2);
-        if (!markerGroups[timeKey]) {
-            markerGroups[timeKey] = [];
+    
+    if (!events || events.length === 0) return;
+
+    const sortedEvents = [...events].sort((a, b) => a.t - b.t);
+    const threshold = 0.08; // Finestra temporale in secondi per raggruppare eventi vicini
+    const markerGroups = [];
+
+    sortedEvents.forEach(evt => {
+        let added = false;
+        for (let group of markerGroups) {
+            if (Math.abs(evt.t - group[0].t) <= threshold) {
+                group.push(evt);
+                added = true;
+                break;
+            }
         }
-        markerGroups[timeKey].push(evt);
+        if (!added) {
+            markerGroups.push([evt]);
+        }
     });
 
-    Object.values(markerGroups).forEach(group => {
-        const firstEvt = group[0];
-        const percentage = (firstEvt.t / maxTime) * 100;
+    markerGroups.forEach(group => {
+        const avgTime = group.reduce((sum, e) => sum + e.t, 0) / group.length;
+        const percentage = (avgTime / maxTime) * 100;
+        
         const colors = [...new Set(group.map(evt => getEventClassification(evt).color))];
+        
         const marker = document.createElement('div');
         marker.className = 'timeline-marker timeline-marker-line';
         marker.style.left = `${percentage}%`;
@@ -220,12 +234,18 @@ function renderTimelineMarkers(events, telemetry) {
         if (colors.length === 1) {
             marker.style.backgroundColor = colors[0];
         } else {
-            marker.style.background = `linear-gradient(to bottom, ${colors[0]} 50%, ${colors[1]} 50%)`;
+            const gradientStops = colors.map((c, i) => {
+                const start = (i / colors.length) * 100;
+                const end = ((i + 1) / colors.length) * 100;
+                return `${c} ${start}%, ${c} ${end}%`;
+            }).join(', ');
+            marker.style.background = `linear-gradient(to bottom, ${gradientStops})`;
         }
+        
         marker.title = group.map(e => `t=${parseFloat(e.t).toFixed(2)}s: ${e.desc}`).join('\n'); 
         marker.addEventListener('click', (e) => {
             e.stopPropagation();
-            const targetFrameIdx = timeToFrameMap[parseFloat(firstEvt.t).toFixed(2)];
+            const targetFrameIdx = group[0].targetFrameIndex;
             jumpToFrame(targetFrameIdx);
         });
 

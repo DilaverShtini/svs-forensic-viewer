@@ -36,35 +36,12 @@ function drawBEV(frameData) {
     if (!cachedRoadPath) {
         let rawPts = [];
         let lastP = null;
-        let isOvertaking = false;
-        let lastValidAudi = null;
 
         for (let i = 0; i < simulationData.length; i++) {
             const f = simulationData[i];
             const ego = f.e;
-            const audi = f.a.find(a => a.id && (a.id.includes('car_audi') || a.id.includes('audi')));
-            if (audi) lastValidAudi = audi;
-
-            if (lastValidAudi) {
-                const dx = ego.x - lastValidAudi.x;
-                const dy = ego.y - lastValidAudi.y;
-                const refYaw = (lastValidAudi.yaw || 0) * (Math.PI / 180);
-                const latDist = -dx * Math.sin(refYaw) + dy * Math.cos(refYaw);
-                
-                if (latDist < -1.5) isOvertaking = true;
-                else if (latDist > -0.5) isOvertaking = false;
-            }
-
             let px = ego.x;
             let py = ego.y;
-            
-            if (isOvertaking) {
-                const egoYawRad = (ego.yaw || 0) * (Math.PI / 180);
-                const nx = -Math.sin(egoYawRad);
-                const ny = Math.cos(egoYawRad);
-                px = ego.x + nx * 3.5; 
-                py = ego.y + ny * 3.5;
-            }
 
             if (!lastP || Math.hypot(px - lastP.x, py - lastP.y) > 0.5) {
                 rawPts.push({ x: px, y: py });
@@ -180,12 +157,10 @@ function drawBEV(frameData) {
     drawPathLine(ctx, cachedRoadPath, -5.25);
     ctx.setLineDash([]);
 
-    // Render the actors
     frameData.a.forEach(actor => {
         ctx.save();
         ctx.translate(actor.x, actor.y);
         
-        // Align the actor with the closest road point
         let minActorDist = Infinity;
         let closestRoadPt = cachedRoadPath[0];
         cachedRoadPath.forEach(pt => {
@@ -200,28 +175,22 @@ function drawBEV(frameData) {
         ctx.rotate(actorYawRad);
 
         ctx.beginPath();
-        if (actor.id && actor.id.includes('van_volkswagen')) {
-            ctx.fillStyle = '#38bdf8';
-            ctx.fillRect(-2.5, -1.1, 5.0, 2.2);
-            ctx.fillStyle = '#111827';
-            ctx.fillRect(0.8, -0.9, 1.2, 1.8);
-        } else if (actor.id && actor.id.includes('car_audi')) {
+
+        if (actor.w > 1.2 || actor.l > 1.2) {
             ctx.fillStyle = '#f59e0b';
-            ctx.fillRect(-2.4, -1.0, 4.8, 2.0);
-            ctx.fillStyle = '#111827';
-            ctx.fillRect(0.6, -0.9, 1.2, 1.8);
+            ctx.fillRect(-actor.l / 2, -actor.w / 2, actor.l, actor.w);
         } else {
-            ctx.arc(0, 0, 0.6, 0, 2 * Math.PI);
+            ctx.arc(0, 0, Math.max(actor.w, 0.6), 0, 2 * Math.PI);
             ctx.fillStyle = '#ef4444';
             ctx.fill();
         }
+        
         ctx.lineWidth = 0.1;
         ctx.strokeStyle = '#fff';
         ctx.stroke();
         ctx.restore();
     });
 
-    // Render Ego Vehicle
     ctx.save();
     ctx.translate(ego.x, ego.y);
     ctx.rotate((ego.yaw || 0) * (Math.PI / 180));
@@ -229,21 +198,7 @@ function drawBEV(frameData) {
     ctx.fillRect(-2.4, -1.0, 4.8, 2.0);
     ctx.fillStyle = '#111827';
     ctx.fillRect(0.6, -0.9, 1.2, 1.8);
-    ctx.restore(); // End of Ego Vehicle rendering
+    ctx.restore(); 
 
-    ctx.restore(); // Restore the context of the canvas to the original state
-
-    // Tag for the actors with their IDs
-    frameData.a.forEach(actor => {
-        const dX = actor.x - camX;
-        const dY = actor.y - camY;
-        const relX = dX * Math.cos(roadYawRad) + dY * Math.sin(roadYawRad);
-        const relY = -dX * Math.sin(roadYawRad) + dY * Math.cos(roadYawRad);
-        const pixelX = centerX + relY * SCALE;
-        const pixelY = centerY - relX * SCALE;
-        
-        ctx.fillStyle = '#fff';
-        ctx.font = '10px Arial';
-        ctx.fillText(actor.id || 'actor', pixelX + 12, pixelY + 4);
-    });
+    ctx.restore(); 
 }
