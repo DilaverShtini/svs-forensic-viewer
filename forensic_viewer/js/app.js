@@ -175,7 +175,7 @@ function generateCausalChain(events, telemetry) {
             
             li.appendChild(causeDiv);
         }
-        li.addEventListener('click', () => jumpToFrame(evt.targetFrameIndex));
+        li.addEventListener('click', () => jumpToFrame(evt.targetFrameIndex, evt.id));
         eventLogContainer.appendChild(li);
     });
 }
@@ -230,7 +230,6 @@ function renderTimelineMarkers(events, telemetry) {
         const marker = document.createElement('div');
         marker.className = 'timeline-marker timeline-marker-line';
         marker.style.left = `${percentage}%`;
-        marker.style.width = '10px';
         
         if (colors.length === 1) {
             marker.style.backgroundColor = colors[0];
