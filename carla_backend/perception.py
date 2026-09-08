@@ -1,4 +1,5 @@
 import math
+from carla_backend.config import TRACKING_THRESHOLD_M
 import numpy as np
 
 class RadarPerception:
@@ -6,6 +7,8 @@ class RadarPerception:
         self.eps = eps_m
         self.min_points = min_points
         self.detected_clusters_local = []
+        self.persistent_tracks = {}
+        self.next_track_id = 0
 
     def update(self, raw_radar_data):
         points = []
@@ -47,6 +50,60 @@ class RadarPerception:
                 
         self.detected_clusters_local = clusters
 
+    def get_tracked_targets(self, ego_tf):
+        def local_to_global(lx, ly):
+            yaw = math.radians(ego_tf.rotation.yaw)
+            lx_compensated = lx + 2.7
+            gx = ego_tf.location.x + lx_compensated * math.cos(yaw) - ly * math.sin(yaw)
+            gy = ego_tf.location.y + lx_compensated * math.sin(yaw) + ly * math.cos(yaw)
+            return gx, gy
+
+        radar_clusters_global = [
+            (local_to_global(cx, cy), w, l) 
+            for cx, cy, w, l in self.detected_clusters_local
+        ]
+
+        unmatched_clusters = list(radar_clusters_global)
+        new_tracks = {}
+        current_actors = []
+
+        for track_id, last_pos in self.persistent_tracks.items():
+            best_match = None
+            best_dist = TRACKING_THRESHOLD_M
+
+            for cluster in unmatched_clusters:
+                (gx, gy), w, l = cluster
+                dist = math.hypot(gx - last_pos[0], gy - last_pos[1])
+                if dist < best_dist:
+                    best_dist = dist
+                    best_match = cluster
+
+            if best_match:
+                (gx, gy), w, l = best_match
+                new_tracks[track_id] = (gx, gy)
+                unmatched_clusters.remove(best_match)
+                current_actors.append({
+                    "id": f"radar_target_{track_id}",
+                    "x": round(gx, 2),
+                    "y": round(gy, 2),
+                    "w": round(w, 2),
+                    "l": round(l, 2)
+                })
+
+        for cluster in unmatched_clusters:
+            (gx, gy), w, l = cluster
+            new_tracks[self.next_track_id] = (gx, gy)
+            current_actors.append({
+                "id": f"radar_target_{self.next_track_id}",
+                "x": round(gx, 2),
+                "y": round(gy, 2),
+                "w": round(w, 2),
+                "l": round(l, 2)
+            })
+            self.next_track_id += 1
+
+        self.persistent_tracks = new_tracks
+        return current_actors
 
 class FrontRadarTracker:
     def __init__(self, azimuth_limit_deg=40.0, altitude_limit_deg=4.0, min_depth_m=0.2):

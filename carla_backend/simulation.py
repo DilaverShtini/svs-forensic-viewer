@@ -543,59 +543,7 @@ try:
 
         # Log telemetry data at specified intervals
         if step % LOG_INTERVAL == 0:
-            current_actors = []
-
-            def local_to_global(ego_tf, lx, ly):
-                yaw = math.radians(ego_tf.rotation.yaw)
-                lx_compensated = lx + 2.7
-                gx = ego_tf.location.x + lx_compensated * math.cos(yaw) - ly * math.sin(yaw)
-                gy = ego_tf.location.y + lx_compensated * math.sin(yaw) + ly * math.cos(yaw)
-                return gx, gy
-
-            radar_clusters_global = [
-                (local_to_global(ego_tf, cx, cy), w, l) 
-                for cx, cy, w, l in radar_perception.detected_clusters_local
-            ]
-
-            unmatched_clusters = list(radar_clusters_global)
-            new_tracks = {}
-
-            for track_id, last_pos in persistent_tracks.items():
-                best_match = None
-                best_dist = TRACKING_THRESHOLD_M
-                
-                for cluster in unmatched_clusters:
-                    (gx, gy), w, l = cluster
-                    dist = math.hypot(gx - last_pos[0], gy - last_pos[1])
-                    if dist < best_dist:
-                        best_dist = dist
-                        best_match = cluster
-                        
-                if best_match:
-                    (gx, gy), w, l = best_match
-                    new_tracks[track_id] = (gx, gy)
-                    unmatched_clusters.remove(best_match)
-                    current_actors.append({
-                        "id": f"radar_target_{track_id}",
-                        "x": round(gx, 2),
-                        "y": round(gy, 2),
-                        "w": round(w, 2),
-                        "l": round(l, 2)
-                    })
-                    
-            for cluster in unmatched_clusters:
-                (gx, gy), w, l = cluster
-                new_tracks[next_track_id] = (gx, gy)
-                current_actors.append({
-                    "id": f"radar_target_{next_track_id}",
-                    "x": round(gx, 2),
-                    "y": round(gy, 2),
-                    "w": round(w, 2),
-                    "l": round(l, 2)
-                })
-                next_track_id += 1
-                
-            persistent_tracks = new_tracks
+            current_actors = radar_perception.get_tracked_targets(ego_tf)
 
             logger.log_telemetry(
                 frame=step,
