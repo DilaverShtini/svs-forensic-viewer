@@ -204,7 +204,7 @@ function renderTimelineMarkers(events, telemetry) {
     if (!events || events.length === 0) return;
 
     const sortedEvents = [...events].sort((a, b) => a.t - b.t);
-    const threshold = 0.08; // Finestra temporale in secondi per raggruppare eventi vicini
+    const threshold = 0.08;
     const markerGroups = [];
 
     sortedEvents.forEach(evt => {
@@ -230,6 +230,7 @@ function renderTimelineMarkers(events, telemetry) {
         const marker = document.createElement('div');
         marker.className = 'timeline-marker timeline-marker-line';
         marker.style.left = `${percentage}%`;
+        marker.style.width = '10px';
         
         if (colors.length === 1) {
             marker.style.backgroundColor = colors[0];
