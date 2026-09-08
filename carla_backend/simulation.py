@@ -573,7 +573,6 @@ try:
                     pass
 
         # Collision logic
-        # --- CALCOLO DINAMICO DELL'OCCLUSIONE ---
         large_obstacle_present = False
         small_obstacle_present = False
         
@@ -583,8 +582,6 @@ try:
             else:
                 small_obstacle_present = True
 
-        # Se sappiamo che c'è un pedone (v2x event), vediamo un ostacolo grande 
-        # ma NON vediamo l'ostacolo piccolo -> deduciamo matematicamente l'occlusione.
         if v2x_event.is_set() and large_obstacle_present and not small_obstacle_present:
             if not occlusion_logged:
                 evt_occlusion = "e_ped_occluded"
@@ -599,7 +596,6 @@ try:
                 event_memory["radar_miss"] = evt_miss
                 current_frame_events.append(evt_miss)
                 radar_miss_logged = True
-
 
         if collision_state["has_collided"] and not ped_fallen and ped_triggered:
             if "walker.pedestrian" in collision_state["other_actor_id"]:
@@ -617,14 +613,10 @@ try:
                 evt_id_crash = "e_collision_ped"
                 causes = []
 
-                late_detection = dist_dec_logged and (time_sim_s - time_dist_dec) < 1.0
-                
-                if "radar_miss" in event_memory and (not small_obstacle_present or late_detection):
+                if "radar_miss" in event_memory:
                     causes.append(event_memory["radar_miss"])
-                elif "aeb_active" in event_memory:
-                    causes.append(event_memory["aeb_active"])
-                elif "hard_brake" in event_memory:
-                    causes.append(event_memory["hard_brake"])
+                elif "hard_brake" in event_memory and "dist_dec" in event_memory:
+                    causes.append(event_memory["dist_dec"])
 
                 impact_kmh = round(v_kmh, 1)
                 desc = f"Collision detected. Impact Speed: {impact_kmh} km/h"
