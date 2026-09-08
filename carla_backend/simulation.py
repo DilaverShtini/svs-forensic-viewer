@@ -10,21 +10,22 @@ import queue as image_queue_module
 import paho.mqtt.client as mqtt
 import ssl
 import shutil
+from config import *
 
 # Connect to the CARLA server
-client = carla.Client("localhost", 2000)
-client.set_timeout(10.0)
+client = carla.Client(CARLA_HOST, CARLA_PORT)
+client.set_timeout(TIMEOUT)
 world = client.get_world()
 
-traffic_manager = client.get_trafficmanager(8000)
+traffic_manager = client.get_trafficmanager(TM_PORT)
 traffic_manager.set_synchronous_mode(True)
 
 settings = world.get_settings()
 settings.synchronous_mode = True
-settings.fixed_delta_seconds = 0.05
+settings.fixed_delta_seconds = FIXED_DELTA_SECONDS
 settings.substepping = True
-settings.max_substep_delta_time = 0.01
-settings.max_substeps = 10
+settings.max_substep_delta_time = MAX_SUBSTEP_DELTA_TIME
+settings.max_substeps = MAX_SUBSTEPS
 settings.no_rendering_mode = False
 world.apply_settings(settings)
 
@@ -57,7 +58,6 @@ v2x_event     = threading.Event()
 v2x_sent_flag = threading.Event()
 v2x_time_sent = 0.0
 v2x_t_sent_extracted = 0.0
-NETWORK_DELAY = 1.5
 
 # MQTT callback function
 def on_mqtt_message(client, userdata, msg, properties = None):
@@ -98,10 +98,10 @@ for client in ['mqtt_tesla', 'mqtt_van']:
 
 # Connect to the MQTT broker and subscribe to the topic
 try:
-    mqtt_tesla.connect("test.mosquitto.org", 8081, 60)
+    mqtt_tesla.connect("test.mosquitto.org", MQTT_PORT, 60)
     mqtt_tesla.subscribe("carla/svs/8/v2x/warning")
     mqtt_tesla.loop_start()
-    mqtt_van.connect("test.mosquitto.org", 8081, 60)
+    mqtt_van.connect("test.mosquitto.org", MQTT_PORT, 60)
     mqtt_van.loop_start()
 
     connection_timeout = 50
@@ -343,52 +343,7 @@ target = None
 radar = None
 camera = None
 
-# Simulation parameters
-RADAR_PARAMS = {
-    "horizontal_fov": 80.0,      
-    "vertical_fov": 5.0,
-    "points_per_second": 10000,  
-    "range_m": 100.0,            
-    "tick": 0.05,              
-}
-
-DURATION_SECONDS = 45.0
 DT = world.get_settings().fixed_delta_seconds
-
-CRUISE_SPEED_KMH = 30.0
-CRUISE_THROTTLE = 0.50
-
-SOFT_DIST_M = 5.0
-HARD_DIST_M = 2.8
-SOFT_TTC_S = 2.0
-HARD_TTC_S = 1.0
-AUDI_RESTART_TIME = 16.0
-
-SOFT_TTC_S_OFF = 3.5 
-SOFT_DIST_OFF  = 8.0 
-HARD_DIST_OFF = 3.5 
-HARD_TTC_S_OFF = 1.5
-
-MAX_SWIVEL_DEG = 45.0
-
-STEER_ACTIVATION_THRESHOLD = 0.04
-DYNAMIC_WIDTH_BASE = 1.50
-DYNAMIC_WIDTH_FACTOR = 3.5
-DYNAMIC_DEPTH_BASE = 60.0
-DYNAMIC_DEPTH_FACTOR = 95.0
-
-PED_TRIGGER_MAX_DIST = 15.0
-PED_TRIGGER_MIN_DIST = 1.0
-PEDESTRIAN_SPEED = 3.5
-
-THROTTLE_SMOOTHING_ALPHA = 0.86
-BRAKE_SMOOTHING_ALPHA = 0.80
-
-HOLD_MODE_DIST_THRESHOLD = 5.30
-HOLD_MODE_SPEED_THRESHOLD = 0.30
-HOLD_MODE_DURATION_S = 2.0
-
-TRACKING_THRESHOLD_M = 3.5
 
 tracker = FrontRadarTracker(azimuth_limit_deg=40.0, altitude_limit_deg=4.0, min_depth_m=0.2)
 
@@ -425,8 +380,6 @@ if os.path.exists(output_folder):
     shutil.rmtree(output_folder)
 
 os.makedirs(output_folder, exist_ok=True)
-LOG_INTERVAL = 4 
-V2X_ACTIVE_DURATION = 5.0
 
 try:
     spawn_tf = carla.Transform(

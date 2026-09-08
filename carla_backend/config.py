@@ -1,0 +1,79 @@
+CARLA_HOST = "localhost"
+CARLA_PORT = 2000
+TM_PORT = 8000
+TIMEOUT = 10.0
+
+# Physics and Synchrony
+FIXED_DELTA_SECONDS = 0.05
+MAX_SUBSTEP_DELTA_TIME = 0.01
+MAX_SUBSTEPS = 10
+DURATION_SECONDS = 45.0
+
+# --- V2X & MQTT SETTINGS ---
+MQTT_BROKER = "test.mosquitto.org"
+MQTT_PORT = 8081
+MQTT_TOPIC = "carla/svs/8/v2x/warning"
+
+NETWORK_DELAY = 1.5
+V2X_ACTIVE_DURATION = 5.0
+
+# --- SCENARIO TRIGGERS ---
+# Pedestrian crossing logic
+PED_TRIGGER_MAX_DIST = 15.0
+PED_TRIGGER_MIN_DIST = 1.0
+PEDESTRIAN_SPEED = 3.5
+
+# --- ADAS & VEHICLE DYNAMICS ---
+CRUISE_SPEED_KMH = 30.0
+CRUISE_THROTTLE = 0.50
+
+# Control Smoothing (EMA)
+THROTTLE_SMOOTHING_ALPHA = 0.86
+BRAKE_SMOOTHING_ALPHA = 0.80
+
+# Soft Braking Thresholds
+SOFT_DIST_M = 5.0
+SOFT_TTC_S = 2.0
+SOFT_DIST_OFF = 8.0
+SOFT_TTC_S_OFF = 3.5
+
+# Emergency (Hard) Braking Thresholds
+HARD_DIST_M = 2.8
+HARD_TTC_S = 1.0
+HARD_DIST_OFF = 3.5
+HARD_TTC_S_OFF = 1.5
+
+TRACKING_THRESHOLD_M = 3.5
+
+# Hold Brake Logic
+HOLD_MODE_DIST_THRESHOLD = 5.30
+HOLD_MODE_SPEED_THRESHOLD = 0.30
+HOLD_MODE_DURATION_S = 2.0
+
+# Steering and Logic limitations
+MAX_SWIVEL_DEG = 45.0
+AUDI_RESTART_TIME = 16.0
+STEER_ACTIVATION_THRESHOLD = 0.04
+
+# Dynamic ROI Deformation
+DYNAMIC_WIDTH_BASE = 1.50
+DYNAMIC_WIDTH_FACTOR = 3.5
+DYNAMIC_DEPTH_BASE = 60.0
+DYNAMIC_DEPTH_FACTOR = 95.0
+
+# --- SENSORS & PERCEPTION ---
+RADAR_PARAMS = {
+    "horizontal_fov": 80.0,      
+    "vertical_fov": 5.0,
+    "points_per_second": 10000,  
+    "range_m": 100.0,            
+    "tick": 0.05,              
+}
+
+# Radar Spatial Clustering
+RADAR_EPSILON_M = 3.5
+RADAR_MIN_POINTS = 3
+
+# --- LOGGING & OUTPUT ---
+OUTPUT_FOLDER = "forensic_viewer/dashcam_records"
+LOG_INTERVAL = 4
