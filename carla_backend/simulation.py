@@ -28,19 +28,22 @@ settings.max_substeps = 10
 settings.no_rendering_mode = False
 world.apply_settings(settings)
 
+# Safely destroy a list of actors
+def safe_destroy(actors):
+    for actor in actors:
+        if actor is not None and actor.is_alive:
+            try:
+                actor.destroy()
+            except RuntimeError:
+                pass
+
 # Clear any existing actors from the world
 for _ in range(2):
     actors_to_destroy = []
     actors_to_destroy.extend(world.get_actors().filter('sensor.*'))   
     actors_to_destroy.extend(world.get_actors().filter('vehicle.*'))
     actors_to_destroy.extend(world.get_actors().filter('walker.*'))
-
-    for actor in actors_to_destroy:
-        if actor is not None and actor.is_alive:
-            try:
-                actor.destroy()
-            except RuntimeError:
-                pass
+    safe_destroy(actors_to_destroy)
 
     world.tick()
     world.tick()
@@ -106,16 +109,6 @@ try:
 
 except Exception as e:
     print(f"Error MQTT: {e}. V2X simulated.")
-
-# Safely destroy a list of actors
-def safe_destroy(actors):
-    for actor in actors:
-        if actor is None:
-            continue
-        try:
-            actor.destroy()
-        except RuntimeError:
-            pass
 
 # Calculate the speed of a vehicle in km/h
 def speed_kmh(vehicle):
@@ -265,11 +258,14 @@ class FrontRadarTracker:
         else:
             self.ttc_s = float("inf")
 
-# Filter radar detections to only include those within the lane boundaries and within a certain height range
-def filter_detections_in_lane(radar_data, half_lane_width=1.75, sensor_height_m=1.2):
+# Filter radar detections to only include those within the lane boundaries, depth and height
+def filter_detections_in_lane(radar_data, half_lane_width=1.75, sensor_height_m=1.2, max_depth_m=100.0):
     filtered_points = []
     for det in radar_data:
         x_front = det.depth * math.cos(det.azimuth) * math.cos(det.altitude)
+        if x_front > max_depth_m:
+            continue
+
         y_lateral = det.depth * math.sin(det.azimuth) * math.cos(det.altitude)
         z_height = det.depth * math.sin(det.altitude)
 
@@ -361,6 +357,23 @@ HARD_TTC_S_OFF = 1.5
 
 MAX_SWIVEL_DEG = 45.0
 
+STEER_ACTIVATION_THRESHOLD = 0.04
+DYNAMIC_WIDTH_BASE = 1.50
+DYNAMIC_WIDTH_FACTOR = 3.5
+DYNAMIC_DEPTH_BASE = 60.0
+DYNAMIC_DEPTH_FACTOR = 95.0
+
+PED_TRIGGER_MAX_DIST = 15.0
+PED_TRIGGER_MIN_DIST = 1.0
+PEDESTRIAN_SPEED = 3.5
+
+THROTTLE_SMOOTHING_ALPHA = 0.86
+BRAKE_SMOOTHING_ALPHA = 0.80
+
+HOLD_MODE_DIST_THRESHOLD = 5.30
+HOLD_MODE_SPEED_THRESHOLD = 0.30
+HOLD_MODE_DURATION_S = 2.0
+
 tracker = FrontRadarTracker(azimuth_limit_deg=40.0, altitude_limit_deg=4.0, min_depth_m=0.2)
 
 v2x_event.clear()
@@ -443,9 +456,11 @@ try:
     def on_radar(measurement):
         radar_state["raw"] = len(measurement)
         radar_perception.update(measurement)
-        lane_points = filter_detections_in_lane(measurement, half_lane_width=lane_width_state["value"])
-        current_max_depth = lane_width_state["max_depth_m"]
-        depth_filtered_points = [p for p in lane_points if (p.get('depth', p.get('x', 0.0)) if isinstance(p, dict) else p.depth) <= current_max_depth]
+        depth_filtered_points = filter_detections_in_lane(
+            measurement, 
+            half_lane_width=lane_width_state["value"],
+            max_depth_m=lane_width_state["max_depth_m"]
+        )
 
         radar_state["filtered"] = len(depth_filtered_points)
         tracker.update(depth_filtered_points)
@@ -538,10 +553,10 @@ try:
         raw_steer = ego.get_control().steer
         steer_abs = abs(raw_steer)
 
-        if steer_abs > 0.04:
-            dynamic_width = 1.50 - (steer_abs * 3.5)
-            dynamic_depth = 60.0 - (steer_abs * 95.0) 
-            swivel_deg = raw_steer * MAX_SWIVEL_DEG 
+        if steer_abs > STEER_ACTIVATION_THRESHOLD:
+            dynamic_width = DYNAMIC_WIDTH_BASE - (steer_abs * DYNAMIC_WIDTH_FACTOR)
+            dynamic_depth = DYNAMIC_DEPTH_BASE - (steer_abs * DYNAMIC_DEPTH_FACTOR)
+            swivel_deg = raw_steer * MAX_SWIVEL_DEG
         else:
             dynamic_width = 1.75
             dynamic_depth = 100.0
@@ -554,10 +569,10 @@ try:
         dist_ped = ego_loc.distance(ped_current_loc)
 
         # Pedestrian crossing logic
-        if dist_ped < 15.0 and dist_ped > 1.0 and not ped_triggered:
+        if dist_ped < PED_TRIGGER_MAX_DIST and dist_ped > PED_TRIGGER_MIN_DIST and not ped_triggered:
             cross_dir = side * -1.0
             cross_dir.z = 0.0
-            control = carla.WalkerControl(direction=cross_dir, speed=3.5)
+            control = carla.WalkerControl(direction=cross_dir, speed=PEDESTRIAN_SPEED)
             ped.apply_control(control)
             ped_triggered = True
 
@@ -711,7 +726,7 @@ try:
         tgt_throttle = CRUISE_THROTTLE
         tgt_brake    = 0.0
         if hold_brake_mode:
-            if d is None or d > 12.0:
+            if d is None or d > HOLD_MODE_DIST_THRESHOLD:
                 hold_brake_mode = False
                 hold_counter = 0
                 tgt_throttle = CRUISE_THROTTLE
@@ -730,13 +745,13 @@ try:
                 tgt_throttle = CRUISE_THROTTLE if v_kmh < CRUISE_SPEED_KMH else 0.0
                 tgt_brake = 0.0
 
-        throttle = 0.86 * throttle + 0.14 * tgt_throttle
-        brake = 0.80 * brake + 0.20 * tgt_brake
+        throttle = THROTTLE_SMOOTHING_ALPHA * throttle + 0.14 * tgt_throttle
+        brake = BRAKE_SMOOTHING_ALPHA * brake + 0.20 * tgt_brake
 
         if brake > 0.20:
             throttle = 0.0
 
-        if d is not None and d < 5.30 and v_kmh < 0.30:
+        if d is not None and d < HOLD_MODE_DIST_THRESHOLD and v_kmh < HOLD_MODE_SPEED_THRESHOLD:
             hold_counter += 1
         else:
             hold_counter = 0
