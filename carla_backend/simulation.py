@@ -388,6 +388,8 @@ HOLD_MODE_DIST_THRESHOLD = 5.30
 HOLD_MODE_SPEED_THRESHOLD = 0.30
 HOLD_MODE_DURATION_S = 2.0
 
+TRACKING_THRESHOLD_M = 3.5
+
 tracker = FrontRadarTracker(azimuth_limit_deg=40.0, altitude_limit_deg=4.0, min_depth_m=0.2)
 
 v2x_event.clear()
@@ -538,6 +540,9 @@ try:
         world.tick()
 
     camera_state = {"local_frame": 0}
+
+    persistent_tracks = {}
+    next_track_id = 0
 
     # Callback function to process camera images
     def on_camera(image):
@@ -816,14 +821,45 @@ try:
                 for cx, cy, w, l in radar_perception.detected_clusters_local
             ]
 
-            for idx, ((gx, gy), w, l) in enumerate(radar_clusters_global):
+            unmatched_clusters = list(radar_clusters_global)
+            new_tracks = {}
+
+            for track_id, last_pos in persistent_tracks.items():
+                best_match = None
+                best_dist = TRACKING_THRESHOLD_M
+                
+                for cluster in unmatched_clusters:
+                    (gx, gy), w, l = cluster
+                    dist = math.hypot(gx - last_pos[0], gy - last_pos[1])
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_match = cluster
+                        
+                if best_match:
+                    (gx, gy), w, l = best_match
+                    new_tracks[track_id] = (gx, gy)
+                    unmatched_clusters.remove(best_match)
+                    current_actors.append({
+                        "id": f"radar_target_{track_id}",
+                        "x": round(gx, 2),
+                        "y": round(gy, 2),
+                        "w": round(w, 2),
+                        "l": round(l, 2)
+                    })
+                    
+            for cluster in unmatched_clusters:
+                (gx, gy), w, l = cluster
+                new_tracks[next_track_id] = (gx, gy)
                 current_actors.append({
-                    "id": f"radar_target_{idx}", 
-                    "x": round(gx, 2), 
+                    "id": f"radar_target_{next_track_id}",
+                    "x": round(gx, 2),
                     "y": round(gy, 2),
                     "w": round(w, 2),
                     "l": round(l, 2)
                 })
+                next_track_id += 1
+                
+            persistent_tracks = new_tracks
 
             logger.log_telemetry(
                 frame=step,
