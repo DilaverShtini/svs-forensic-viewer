@@ -59,21 +59,6 @@ v2x_time_sent = 0.0
 v2x_t_sent_extracted = 0.0
 NETWORK_DELAY = 1.5
 
-unique_client_id = f"Tesla_Ego_{random.randint(10000, 99999)}"
-
-mqtt_client = mqtt.Client(
-    callback_api_version=mqtt.CallbackAPIVersion.VERSION2, 
-    client_id=unique_client_id,
-    transport="websockets"
-)
-
-if 'mqtt_client' in globals():
-    try:
-        mqtt_client.loop_stop()
-        mqtt_client.disconnect()
-    except Exception:
-        pass
-
 # MQTT callback function
 def on_mqtt_message(client, userdata, msg, properties = None):
     global v2x_t_sent_extracted
@@ -86,26 +71,55 @@ def on_mqtt_message(client, userdata, msg, properties = None):
         except Exception:
             pass
 
-mqtt_client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
-mqtt_client.on_message = on_mqtt_message
+client_id_tesla = f"Tesla_Ego_{random.randint(10000, 99999)}"
+mqtt_tesla = mqtt.Client(
+    callback_api_version=mqtt.CallbackAPIVersion.VERSION2, 
+    client_id=client_id_tesla,
+    transport="websockets"
+)
+mqtt_tesla.tls_set(cert_reqs=ssl.CERT_REQUIRED)
+mqtt_tesla.on_message = on_mqtt_message
+
+client_id_van = f"Van_RSU_{random.randint(10000, 99999)}"
+mqtt_van = mqtt.Client(
+    callback_api_version=mqtt.CallbackAPIVersion.VERSION2, 
+    client_id=client_id_van,
+    transport="websockets"
+)
+mqtt_van.tls_set(cert_reqs=ssl.CERT_REQUIRED)
+
+for client in ['mqtt_tesla', 'mqtt_van']:
+    if client in globals():
+        try:
+            globals()[client].loop_stop()
+            globals()[client].disconnect()
+        except Exception:
+            pass
 
 # Connect to the MQTT broker and subscribe to the topic
 try:
-    mqtt_client.connect("test.mosquitto.org", 8081, 60)
-    mqtt_client.subscribe("carla/svs/8/v2x/warning")
-    mqtt_client.loop_start()
+    mqtt_tesla.connect("test.mosquitto.org", 8081, 60)
+    mqtt_tesla.subscribe("carla/svs/8/v2x/warning")
+    mqtt_tesla.loop_start()
+    mqtt_van.connect("test.mosquitto.org", 8081, 60)
+    mqtt_van.loop_start()
 
     connection_timeout = 50
     while connection_timeout > 0:
-        if mqtt_client.is_connected():
+        if mqtt_tesla.is_connected() and mqtt_van.is_connected():
             break
         time.sleep(0.1)
         connection_timeout -= 1
 
-    if mqtt_client.is_connected():
-        print(f"Connected at test.mosquitto.org: {unique_client_id}")
+    if mqtt_tesla.is_connected():
+        print(f"Tesla (Receiver) connected: {client_id_tesla}")
     else:
-        print("[WARN] Timeout MQTT — V2X simulated")
+        print("[WARN] Timeout MQTT Tesla — V2X simulated")
+
+    if mqtt_van.is_connected():
+        print(f"Van (Sender) connected: {client_id_van}")
+    else:
+        print("[WARN] Timeout MQTT Van — V2X simulated")
 
 except Exception as e:
     print(f"Error MQTT: {e}. V2X simulated.")
@@ -576,14 +590,18 @@ try:
             ped.apply_control(control)
             ped_triggered = True
 
-            # V2X message sending logic (via furgone, non loggato da ego)
+            # V2X message sending logic
             if not v2x_sent_flag.is_set():
                 try:
-                    payload = json.dumps({"msg": "PEDESTRIAN_DETECTED", "t_sent": round(time_sim_s, 2)})
-                    mqtt_client.publish("carla/svs/8/v2x/warning", payload)
+                    payload = json.dumps({
+                        "msg": "PEDESTRIAN_DETECTED", 
+                        "sender": client_id_van, 
+                        "t_sent": round(time_sim_s, 2)
+                    })
+                    mqtt_van.publish("carla/svs/8/v2x/warning", payload)
                     v2x_sent_flag.set()
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[ERROR] Van failed to send V2X: {e}")
 
         v2x_condition = (
             v2x_event.is_set() and
@@ -837,8 +855,10 @@ finally:
             print("[Cleanup] Image saving thread stopped.")
 
         try:
-            mqtt_client.loop_stop()
-            mqtt_client.disconnect()
+            mqtt_tesla.loop_stop()
+            mqtt_tesla.disconnect()
+            mqtt_van.loop_stop()
+            mqtt_van.disconnect()
             print("[Cleanup] MQTT disconnected.")
         except:
             pass
