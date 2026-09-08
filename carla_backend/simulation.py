@@ -107,7 +107,6 @@ try:
 except Exception as e:
     print(f"Error MQTT: {e}. V2X simulated.")
 
-
 # Safely destroy a list of actors
 def safe_destroy(actors):
     for actor in actors:
@@ -143,7 +142,7 @@ def spawn_camera(world, attach_to, transform):
 
     if bp.has_attribute("role_name"):
         bp.set_attribute("role_name", "forensic_dashcam")
-        
+
     return world.spawn_actor(bp, transform, attach_to=attach_to)
 
 # Spawn a radar sensor attached to a vehicle
@@ -196,27 +195,27 @@ class RadarPerception:
         pts = np.array(points)
         clusters = []
         visited = set()
-        
+
         for i, p in enumerate(pts):
             if i in visited: continue
             dists = np.linalg.norm(pts - p, axis=1)
             neighbors = np.where(dists < self.eps)[0]
-            
+
             if len(neighbors) >= self.min_points:
                 visited.update(neighbors)
                 cluster_pts = pts[neighbors]
-                
+
                 cx = np.mean(cluster_pts[:, 0])
                 cy = np.mean(cluster_pts[:, 1])
-                
+
                 length = np.ptp(cluster_pts[:, 0])
                 width = np.ptp(cluster_pts[:, 1])
-                
+
                 length = max(length, 0.8)
                 width = max(width, 0.8)
-                
+
                 clusters.append((cx, cy, width, length))
-                
+
         self.detected_clusters_local = clusters
 
 radar_perception = RadarPerception(eps_m=3.5, min_points=3)
@@ -285,7 +284,6 @@ def filter_detections_in_lane(radar_data, half_lane_width=1.75, sensor_height_m=
                 "rel_velocity": det.velocity
             })
     return filtered_points
-
 
 # Class to log events and telemetry data for forensic analysis
 class FastCausalLogger:
@@ -470,7 +468,7 @@ try:
     def on_collision(event):
         collision_state["has_collided"] = True
         collision_state["other_actor_id"] = event.other_actor.type_id
-        
+
         impulse = event.normal_impulse
         intensity = math.sqrt(impulse.x**2 + impulse.y**2 + impulse.z**2)
         collision_state["impulse_kg_m_s"] = intensity
@@ -583,7 +581,7 @@ try:
             delay = round(time_sim_s - v2x_t_sent_extracted, 2)
             evt_id_rx = "e_v2x_rx"
             desc = f"V2X Warning received. Warning sent {delay} seconds ago"
-            
+
             logger.log_event(evt_id_rx, time_sim_s, desc, causes=[])
             event_memory["v2x_rx"] = evt_id_rx
             current_frame_events.append(evt_id_rx)
@@ -598,7 +596,7 @@ try:
 
         large_obstacle_present = False
         small_obstacle_present = False
-        
+
         for cx, cy, w, l in radar_perception.detected_clusters_local:
             if cx < 25.0:
                 if w > 1.2 or l > 1.2:
@@ -613,7 +611,7 @@ try:
                 event_memory["ped_occluded"] = evt_occlusion
                 current_frame_events.append(evt_occlusion)
                 occlusion_logged = True
-                
+
             if not radar_miss_logged:
                 evt_miss = "e_radar_miss"
                 logger.log_event(evt_miss, time_sim_s, "Radar failed to detect pedestrian", [event_memory["ped_occluded"]])
@@ -638,7 +636,7 @@ try:
                 causes = []
 
                 late_detection = dist_dec_logged and (time_sim_s - time_dist_dec) < 1.0
-                
+
                 if "radar_miss" in event_memory and (not small_obstacle_present or late_detection):
                     causes.append(event_memory["radar_miss"])
                 elif "aeb_active" in event_memory:
@@ -708,31 +706,6 @@ try:
             soft_brake_logged = False
         if not hard_condition:
             hard_brake_logged = False
-
-        # Check if V2X warning conditions are met and log the event
-        v2x_condition = (
-            v2x_event.is_set() and
-            v2x_t_sent_extracted > 0.000 and
-            (time_sim_s - v2x_t_sent_extracted) >= NETWORK_DELAY and
-            (time_sim_s - v2x_t_sent_extracted) <= (NETWORK_DELAY + V2X_ACTIVE_DURATION)
-        )
-
-        if v2x_condition and not v2x_logged:
-            delay = round(time_sim_s - v2x_t_sent_extracted, 2)
-            evt_id_rx = "e_v2x_rx"
-            desc = f"V2X Warning received. Warning sent {delay} seconds ago"
-            
-            logger.log_event(evt_id_rx, time_sim_s, desc, causes=[])
-            event_memory["v2x_rx"] = evt_id_rx
-            current_frame_events.append(evt_id_rx)
-
-            evt_id_aeb = "e_aeb_v2x"
-            causes_aeb = [evt_id_rx]
-            logger.log_event(evt_id_aeb, time_sim_s, "System applies emergency braking", causes_aeb)
-            event_memory["aeb_active"] = evt_id_aeb
-            current_frame_events.append(evt_id_aeb)
-
-            v2x_logged = True
 
         # Determine target throttle and brake values based on the current conditions
         tgt_throttle = CRUISE_THROTTLE
