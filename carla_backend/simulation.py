@@ -572,17 +572,41 @@ try:
                 except Exception:
                     pass
 
-        # Collision logic
+        v2x_condition = (
+            v2x_event.is_set() and
+            v2x_t_sent_extracted > 0.000 and
+            (time_sim_s - v2x_t_sent_extracted) >= NETWORK_DELAY and
+            (time_sim_s - v2x_t_sent_extracted) <= (NETWORK_DELAY + V2X_ACTIVE_DURATION)
+        )
+
+        if v2x_condition and not v2x_logged:
+            delay = round(time_sim_s - v2x_t_sent_extracted, 2)
+            evt_id_rx = "e_v2x_rx"
+            desc = f"V2X Warning received. Warning sent {delay} seconds ago"
+            
+            logger.log_event(evt_id_rx, time_sim_s, desc, causes=[])
+            event_memory["v2x_rx"] = evt_id_rx
+            current_frame_events.append(evt_id_rx)
+
+            evt_id_aeb = "e_aeb_v2x"
+            causes_aeb = [evt_id_rx]
+            logger.log_event(evt_id_aeb, time_sim_s, "System applies emergency braking", causes_aeb)
+            event_memory["aeb_active"] = evt_id_aeb
+            current_frame_events.append(evt_id_aeb)
+
+            v2x_logged = True
+
         large_obstacle_present = False
         small_obstacle_present = False
         
         for cx, cy, w, l in radar_perception.detected_clusters_local:
-            if w > 1.2 or l > 1.2:
-                large_obstacle_present = True
-            else:
-                small_obstacle_present = True
+            if cx < 25.0:
+                if w > 1.2 or l > 1.2:
+                    large_obstacle_present = True
+                else:
+                    small_obstacle_present = True
 
-        if v2x_event.is_set() and large_obstacle_present and not small_obstacle_present:
+        if "v2x_rx" in event_memory and large_obstacle_present and not small_obstacle_present:
             if not occlusion_logged:
                 evt_occlusion = "e_ped_occluded"
                 logger.log_event(evt_occlusion, time_sim_s, "Large obstacle inferred to be occluding sensor view", [])
@@ -613,10 +637,14 @@ try:
                 evt_id_crash = "e_collision_ped"
                 causes = []
 
-                if "radar_miss" in event_memory:
+                late_detection = dist_dec_logged and (time_sim_s - time_dist_dec) < 1.0
+                
+                if "radar_miss" in event_memory and (not small_obstacle_present or late_detection):
                     causes.append(event_memory["radar_miss"])
-                elif "hard_brake" in event_memory and "dist_dec" in event_memory:
-                    causes.append(event_memory["dist_dec"])
+                elif "aeb_active" in event_memory:
+                    causes.append(event_memory["aeb_active"])
+                elif "hard_brake" in event_memory:
+                    causes.append(event_memory["hard_brake"])
 
                 impact_kmh = round(v_kmh, 1)
                 desc = f"Collision detected. Impact Speed: {impact_kmh} km/h"
