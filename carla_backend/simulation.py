@@ -52,15 +52,22 @@ v2x_event     = threading.Event()
 v2x_sent_flag = threading.Event()
 v2x_time_sent = 0.0
 v2x_t_sent_extracted = 0.0
+v2x_ped_data = None
 
 # MQTT callback function
 def on_mqtt_message(client, userdata, msg, properties = None):
-    global v2x_t_sent_extracted
+    global v2x_t_sent_extracted, v2x_ped_data
     if msg.topic == "carla/svs/8/v2x/warning":
         try:
             data = json.loads(msg.payload.decode("utf-8"))
             if data.get("msg") == "PEDESTRIAN_DETECTED":
                 v2x_t_sent_extracted = data.get("t_sent", 0.0)
+                v2x_ped_data = {
+                    "x": data.get("x", 0.0),
+                    "y": data.get("y", 0.0),
+                    "vx": data.get("vx", 0.0),
+                    "vy": data.get("vy", 0.0)
+                }
                 v2x_event.set()
         except Exception:
             pass
@@ -230,7 +237,8 @@ try:
     collision_state = {
         "has_collided": False,
         "other_actor_id": None,
-        "impulse_kg_m_s": 0.0
+        "impulse_kg_m_s": 0.0,
+        "time_of_impact": -1.0
     }
 
     def on_collision(event):
@@ -335,22 +343,45 @@ try:
             # V2X message sending logic
             if not v2x_sent_flag.is_set():
                 try:
+                    p_loc = ped.get_location()
+                    p_vx = cross_dir.x * PEDESTRIAN_SPEED
+                    p_vy = cross_dir.y * PEDESTRIAN_SPEED
                     payload = json.dumps({
                         "msg": "PEDESTRIAN_DETECTED", 
                         "sender": client_id_van, 
-                        "t_sent": round(time_sim_s, 2)
+                        "t_sent": round(time_sim_s, 2),
+                        "x": round(p_loc.x, 2),
+                        "y": round(p_loc.y, 2),
+                        "vx": round(p_vx, 2),
+                        "vy": round(p_vy, 2)
                     })
                     mqtt_van.publish("carla/svs/8/v2x/warning", payload)
                     v2x_sent_flag.set()
                 except Exception as e:
                     print(f"[ERROR] Van failed to send V2X: {e}")
 
-        v2x_condition = (
+        v2x_condition_active = (
             v2x_event.is_set() and
             v2x_t_sent_extracted > 0.000 and
             (time_sim_s - v2x_t_sent_extracted) >= NETWORK_DELAY and
             (time_sim_s - v2x_t_sent_extracted) <= (NETWORK_DELAY + V2X_ACTIVE_DURATION)
         )
+
+        v2x_relevant = False
+        if v2x_condition_active and v2x_ped_data:
+            time_lost = time_sim_s - v2x_t_sent_extracted
+            current_ped_x = v2x_ped_data["x"] + (v2x_ped_data["vx"] * time_lost)
+            current_ped_y = v2x_ped_data["y"] + (v2x_ped_data["vy"] * time_lost)
+            dx = current_ped_x - ego_loc.x
+            dy = current_ped_y - ego_loc.y
+            fwd_vec = ego_tf.get_forward_vector()
+            right_vec = ego_tf.get_right_vector()
+            longitudinal_dist = (dx * fwd_vec.x) + (dy * fwd_vec.y)
+            lateral_dist = (dx * right_vec.x) + (dy * right_vec.y)
+            if 0.0 < longitudinal_dist < 60.0 and abs(lateral_dist) < 3.5:
+                v2x_relevant = True
+
+        v2x_condition = v2x_condition_active and v2x_relevant
 
         if v2x_condition and not v2x_logged:
             delay = round(time_sim_s - v2x_t_sent_extracted, 2)
@@ -481,7 +512,20 @@ try:
         # Determine target throttle and brake values based on the current conditions
         tgt_throttle = CRUISE_THROTTLE
         tgt_brake    = 0.0
-        if hold_brake_mode:
+
+        if collision_state["has_collided"]:
+            if collision_state["time_of_impact"] < 0:
+                collision_state["time_of_impact"] = time_sim_s
+            
+            elif (time_sim_s - collision_state["time_of_impact"]) > 4.0:
+                collision_state["has_collided"] = False
+                collision_state["time_of_impact"] = -1.0
+
+        if collision_state["has_collided"]:
+            tgt_throttle = 0.0
+            tgt_brake = 1.0
+
+        elif hold_brake_mode:
             if d is None or d > HOLD_MODE_DIST_THRESHOLD:
                 hold_brake_mode = False
                 hold_counter = 0
@@ -504,7 +548,11 @@ try:
         throttle = THROTTLE_SMOOTHING_ALPHA * throttle + 0.14 * tgt_throttle
         brake = BRAKE_SMOOTHING_ALPHA * brake + 0.20 * tgt_brake
 
-        if brake > 0.20:
+        if collision_state["has_collided"]:
+            throttle = 0.0
+            brake = max(brake, 0.95)
+
+        elif brake > 0.20:
             throttle = 0.0
 
         if d is not None and d < HOLD_MODE_DIST_THRESHOLD and v_kmh < HOLD_MODE_SPEED_THRESHOLD:
@@ -517,7 +565,7 @@ try:
             brake = max(brake, 0.95)
 
         # Update the vehicle's control based on whether ADAS is acting and whether autopilot is active
-        adas_is_acting = hold_brake_mode or hard_condition or soft_condition or v2x_condition
+        adas_is_acting = collision_state["has_collided"] or hold_brake_mode or hard_condition or soft_condition or v2x_condition
         last_known_steer = ego.get_control().steer
         if adas_is_acting and autopilot_active:
             ego.set_autopilot(False)
