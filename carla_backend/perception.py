@@ -151,23 +151,29 @@ class FrontRadarTracker:
             self.ttc_s = float("inf")
 
 # Filter radar detections to only include those within the lane boundaries, depth and height
-def filter_detections_in_lane(radar_data, half_lane_width=1.75, sensor_height_m=1.2, max_depth_m=100.0):
+def filter_detections_in_lane(radar_data, half_lane_width=1.75, sensor_height_m=1.2,
+                               max_depth_m=100.0, swivel_rad=0.0):
     filtered_points = []
+    cos_s = math.cos(swivel_rad)
+    sin_s = math.sin(swivel_rad)
+
     for det in radar_data:
         x_front = det.depth * math.cos(det.azimuth) * math.cos(det.altitude)
-        if x_front > max_depth_m:
-            continue
-
         y_lateral = det.depth * math.sin(det.azimuth) * math.cos(det.altitude)
         z_height = det.depth * math.sin(det.altitude)
 
+        # Rotate the point into the steering-aligned ROI frame
+        x_rot = x_front * cos_s + y_lateral * sin_s
+        y_rot = -x_front * sin_s + y_lateral * cos_s
+
+        if x_rot > max_depth_m:
+            continue
         if z_height < -(sensor_height_m - 0.2) or z_height > 1.0:
             continue
-
-        if abs(y_lateral) <= half_lane_width:
+        if abs(y_rot) <= half_lane_width:
             filtered_points.append({
-                "x": x_front,
-                "y": y_lateral,
+                "x": x_rot,
+                "y": y_rot,
                 "z": z_height,
                 "rel_velocity": det.velocity
             })

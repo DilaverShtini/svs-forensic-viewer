@@ -209,9 +209,10 @@ try:
         radar_state["raw"] = len(measurement)
         radar_perception.update(measurement)
         depth_filtered_points = filter_detections_in_lane(
-            measurement, 
+            measurement,
             half_lane_width=lane_width_state["value"],
-            max_depth_m=lane_width_state["max_depth_m"]
+            max_depth_m=lane_width_state["max_depth_m"],
+            swivel_rad=lane_width_state["swivel_rad"]
         )
 
         radar_state["filtered"] = len(depth_filtered_points)
@@ -305,7 +306,7 @@ try:
         ego_loc = ego.get_location()
         ped_current_loc = ped.get_location()
 
-        raw_steer = ego.get_control().steer
+        raw_steer = last_known_steer if not autopilot_active else ego.get_control().steer
         steer_abs = abs(raw_steer)
 
         if steer_abs > STEER_ACTIVATION_THRESHOLD:
