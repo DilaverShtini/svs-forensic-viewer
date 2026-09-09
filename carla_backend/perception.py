@@ -1,5 +1,5 @@
 import math
-from carla_backend.config import TRACKING_THRESHOLD_M
+from config import TRACKING_THRESHOLD_M
 import numpy as np
 
 class RadarPerception:

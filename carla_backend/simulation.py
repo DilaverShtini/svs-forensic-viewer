@@ -409,14 +409,10 @@ try:
                 evt_id_crash = "e_collision_ped"
                 causes = []
 
-                late_detection = dist_dec_logged and (time_sim_s - time_dist_dec) < 1.0
-
-                if "radar_miss" in event_memory and (not small_obstacle_present or late_detection):
+                if "radar_miss" in event_memory:
                     causes.append(event_memory["radar_miss"])
-                elif "aeb_active" in event_memory:
-                    causes.append(event_memory["aeb_active"])
-                elif "hard_brake" in event_memory:
-                    causes.append(event_memory["hard_brake"])
+                elif "dist_dec" in event_memory:
+                    causes.append(event_memory["dist_dec"])
 
                 impact_kmh = round(v_kmh, 1)
                 desc = f"Collision detected. Impact Speed: {impact_kmh} km/h"
